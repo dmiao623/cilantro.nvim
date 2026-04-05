@@ -1,0 +1,187 @@
+*cilantro.txt*  File-based task manager for Neovim
+
+Author:   dustinm
+License:  MIT
+
+==============================================================================
+CONTENTS                                                    *cilantro-contents*
+
+  1. Introduction .......................... |cilantro-introduction|
+  2. Setup ................................ |cilantro-setup|
+  3. Commands ............................. |cilantro-commands|
+  4. Keymaps .............................. |cilantro-keymaps|
+  5. Configuration ........................ |cilantro-configuration|
+  6. Task Format .......................... |cilantro-task-format|
+  7. Highlights ........................... |cilantro-highlights|
+
+==============================================================================
+INTRODUCTION                                            *cilantro-introduction*
+
+Cilantro is a file-based task manager for Neovim. Tasks are stored as
+individual Markdown files with YAML frontmatter. Directories are used for
+human grouping only. The main pane provides a queryable task list, while
+task files are edited as ordinary buffers.
+
+==============================================================================
+SETUP                                                        *cilantro-setup*
+
+Add cilantro to your plugin manager, then call setup:
+>lua
+  require("cilantro").setup({
+    task_dir = "~/tasks",
+  })
+<
+
+With lazy.nvim:
+>lua
+  {
+    "dustinm/cilantro.nvim",
+    config = function()
+      require("cilantro").setup({
+        task_dir = "~/tasks",
+      })
+    end,
+  }
+<
+
+==============================================================================
+COMMANDS                                                  *cilantro-commands*
+
+:Cilantro                                                        *:Cilantro*
+  Open the cilantro task list.
+
+:CilantroCreate [title]                                    *:CilantroCreate*
+  Create a new task. If no title is given, prompts for one. After entering
+  a title, prompts for a directory path. Leave the path empty to use the
+  default `task_dir`.
+
+:CilantroRefresh                                          *:CilantroRefresh*
+  Rebuild the index and re-render the task list.
+
+:CilantroClose                                              *:CilantroClose*
+  Close the cilantro UI (list and peek windows).
+
+:CilantroToggle                                            *:CilantroToggle*
+  Toggle the cilantro UI.
+
+==============================================================================
+KEYMAPS                                                    *cilantro-keymaps*
+
+In the task list buffer:
+
+  <CR>      Open task in peek split (lower horizontal split)
+  x         Cycle status forward (todo → in_progress → done → cancelled)
+  X         Cycle status backward
+  a         Create a new task (prompts for title, then directory path)
+  f         Filter by status
+  s         Change sort field
+  S         Toggle sort direction (ascending/descending)
+  se        Sort by end date
+  sm        Sort by estimated minutes
+  sa        Sort alphabetically by title
+  td        Toggle showing completed (done) tasks
+  R         Refresh index and re-render
+  <C-f>     Open task in focus mode (full window)
+  q         Close cilantro
+
+In the peek split:
+
+  <C-f>     Toggle between peek and focus mode
+
+All keymaps can be customized or disabled via |cilantro-configuration|.
+
+==============================================================================
+CONFIGURATION                                        *cilantro-configuration*
+
+Configuration is passed to `require("cilantro").setup()`:
+>lua
+  require("cilantro").setup({
+    -- Required: path to the task directory
+    task_dir = "~/tasks",
+
+    -- Status values and their display order
+    status_order = { "todo", "in_progress", "done", "cancelled" },
+
+    -- Default status for new tasks
+    default_status = "todo",
+
+    -- Height of the peek split (in lines)
+    peek_height = 15,
+
+    -- Columns shown in the task list
+    list_columns = { "status", "title", "end_date", "estimated_minutes" },
+
+    -- Keymap overrides (set to false to disable)
+    keymaps = {
+      open = "<CR>",
+      cycle_status = "x",
+      cycle_status_back = "X",
+      create = "a",
+      filter = "f",
+      sort = "s",
+      sort_direction = "S",
+      sort_end_date = "se",
+      sort_minutes = "sm",
+      sort_alpha = "sa",
+      toggle_done = "td",
+      refresh = "R",
+      focus = "<C-f>",
+      close = "q",
+    },
+  })
+<
+
+==============================================================================
+TASK FORMAT                                            *cilantro-task-format*
+
+Each task is a Markdown file with YAML frontmatter:
+>markdown
+  ---
+  id: 01HT...
+  title: Draft billing migration plan
+  status: in_progress
+  created_at: 2026-04-05T10:42:00Z
+  updated_at: 2026-04-05T11:10:00Z
+  start_date: 2026-04-05
+  end_date: 2026-04-12
+  completed_at:
+  estimated_minutes: 90
+  ---
+  Notes for this task go here.
+<
+
+Filenames follow the pattern `<ID>-<slug>.md`. The ID is persistent;
+the slug is derived from the title. When the title is changed in the
+frontmatter and the file is saved, the file is automatically renamed
+to match and any open Oil.nvim buffers are refreshed.
+
+The `updated_at` field is automatically set to the current time whenever
+the task file is saved.
+
+The `start_date` field defaults to the creation date when a new task is
+created.
+
+Status values: `todo`, `in_progress`, `done`, `cancelled`.
+
+When sorting by end date (the default), tasks are grouped under date
+headers. Tasks without an end date are sorted last.
+
+==============================================================================
+HIGHLIGHTS                                              *cilantro-highlights*
+
+The following highlight groups are defined with `default = true` so they
+can be overridden in your colorscheme:
+
+  CilantroStatusTodo          Linked to |hl-Keyword|
+  CilantroStatusInProgress    Linked to |hl-WarningMsg|
+  CilantroStatusDone          Linked to |hl-DiagnosticOk|
+  CilantroStatusCancelled     Linked to |hl-NonText|
+  CilantroTitle               Linked to |hl-Normal|
+  CilantroTitleDone           Linked to |hl-DiagnosticOk|
+  CilantroDate                Linked to |hl-Number|
+  CilantroMinutes             Linked to |hl-Special|
+  CilantroHeader              Linked to |hl-Title|
+  CilantroEmpty               Linked to |hl-Comment|
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:
