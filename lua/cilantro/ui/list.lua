@@ -7,6 +7,7 @@ M.bufnr = nil
 M.task_ids = {}
 M.query_opts = {}
 M.hide_done = false
+M.show_paths = true
 
 local ns = vim.api.nvim_create_namespace("CilantroList")
 
@@ -48,13 +49,31 @@ function M.get_buf()
   return M.bufnr
 end
 
+local function task_display_name(t)
+  if not M.show_paths or not t.path then
+    return t.title or "(untitled)"
+  end
+
+  local cfg = config.get()
+  local rel = t.path:gsub("^" .. vim.pesc(cfg.task_dir) .. "/", "")
+  -- Strip the filename, keep only directory parts
+  local dir = vim.fn.fnamemodify(rel, ":h")
+  local title = t.title or "(untitled)"
+
+  if dir == "." then
+    return title
+  end
+
+  return dir:gsub("/", " / ") .. " / " .. title
+end
+
 local function render_task_line(t)
   local icon = STATUS_ICONS[t.status] or "[?]"
-  local title = t.title or "(untitled)"
+  local name = task_display_name(t)
   local date = t.end_date or ""
   local minutes = t.estimated_minutes and (t.estimated_minutes .. "m") or "-"
 
-  local title_col = pad_right(title, 50)
+  local title_col = pad_right(name, 50)
   local date_col = pad_right(date, 12)
   local min_col = pad_right(minutes, 6)
 
@@ -79,12 +98,14 @@ local function task_line_highlights(t, line_idx)
   local date_end = date_start + date_col_width
   local min_start = date_end + 1
 
-  return {
+  local hls = {
     { line_idx, status_hl, icon_start, icon_end },
     { line_idx, title_hl, title_start, title_end },
     { line_idx, date_hl, date_start, date_end },
     { line_idx, min_hl, min_start, -1 },
   }
+
+  return hls
 end
 
 function M.render()
@@ -293,6 +314,11 @@ function M.toggle_done()
   M.render()
 end
 
+function M.toggle_paths()
+  M.show_paths = not M.show_paths
+  M.render()
+end
+
 function M.setup_keymaps(bufnr)
   local cfg = config.get()
   local km = cfg.keymaps
@@ -349,6 +375,10 @@ function M.setup_keymaps(bufnr)
   map(km.toggle_done, function()
     M.toggle_done()
   end, "Toggle showing completed tasks")
+
+  map(km.toggle_paths, function()
+    M.toggle_paths()
+  end, "Toggle showing file paths")
 
   map(km.refresh, function()
     require("cilantro").refresh()

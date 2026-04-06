@@ -18,6 +18,7 @@ M.defaults = {
     sort_minutes = "sm",
     sort_alpha = "sa",
     toggle_done = "td",
+    toggle_paths = "tp",
     refresh = "R",
     focus = "<C-f>",
     close = "q",
