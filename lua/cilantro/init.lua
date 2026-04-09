@@ -154,21 +154,30 @@ function M.toggle()
   end
 end
 
-function M.create_task(title)
+function M.create_task(input)
   local cfg = require("cilantro.config").get()
   local task_mod = require("cilantro.task")
   local index = require("cilantro.index")
   local list = require("cilantro.ui.list")
 
-  local function do_create(t, dir)
-    if not t or t == "" then
+  local function do_create(raw)
+    if not raw or raw == "" then
       return
     end
 
-    dir = dir or cfg.task_dir
+    local title = vim.fn.fnamemodify(raw, ":t")
+    local parent = vim.fn.fnamemodify(raw, ":h")
+
+    local dir
+    if parent == "." then
+      dir = cfg.task_dir
+    else
+      dir = cfg.task_dir .. "/" .. parent
+    end
+
     vim.fn.mkdir(dir, "p")
 
-    local task = task_mod.create(t, dir)
+    local task = task_mod.create(title, dir)
     index.put(task)
 
     if list.is_visible() then
@@ -181,28 +190,11 @@ function M.create_task(title)
     peek.open(task)
   end
 
-  local function prompt_path(t)
-    vim.ui.input({ prompt = "Task path (empty for default): ", default = "" }, function(path)
-      if path == nil then
-        return
-      end
-      local dir
-      if path == "" then
-        dir = cfg.task_dir
-      else
-        dir = vim.fn.expand(path)
-      end
-      do_create(t, dir)
-    end)
-  end
-
-  if title then
-    prompt_path(title)
+  if input then
+    do_create(input)
   else
-    vim.ui.input({ prompt = "Task title: " }, function(input)
-      if input and input ~= "" then
-        prompt_path(input)
-      end
+    vim.ui.input({ prompt = "Task (path/to/title): " }, function(val)
+      do_create(val)
     end)
   end
 end
