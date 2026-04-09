@@ -10,6 +10,7 @@ M.FIELD_ORDER = {
   "end_date",
   "completed_at",
   "estimated_minutes",
+  "subtasks",
 }
 
 function M.parse(lines)
@@ -34,16 +35,29 @@ function M.parse(lines)
   end
 
   local metadata = {}
-  for i = 2, frontmatter_end - 1 do
+  local i = 2
+  while i <= frontmatter_end - 1 do
     local key, value = lines[i]:match("^([%w_]+):%s*(.*)$")
     if key then
       value = vim.trim(value)
       if value == "" then
-        metadata[key] = nil
+        -- Check if next lines are list items (  - item)
+        local list_items = {}
+        while i + 1 <= frontmatter_end - 1 and lines[i + 1]:match("^%s*-%s+(.+)$") do
+          i = i + 1
+          local item = lines[i]:match("^%s*-%s+(.+)$")
+          table.insert(list_items, vim.trim(item))
+        end
+        if #list_items > 0 then
+          metadata[key] = list_items
+        else
+          metadata[key] = nil
+        end
       else
         metadata[key] = value
       end
     end
+    i = i + 1
   end
 
   local body_lines = {}
@@ -54,15 +68,23 @@ function M.parse(lines)
   return metadata, frontmatter_end, body_lines
 end
 
+local function serialize_value(lines, key, value)
+  if type(value) == "table" then
+    table.insert(lines, key .. ":")
+    for _, item in ipairs(value) do
+      table.insert(lines, "  - " .. tostring(item))
+    end
+  elseif value ~= nil then
+    table.insert(lines, key .. ": " .. tostring(value))
+  else
+    table.insert(lines, key .. ":")
+  end
+end
+
 function M.serialize(metadata)
   local lines = { "---" }
   for _, key in ipairs(M.FIELD_ORDER) do
-    local value = metadata[key]
-    if value ~= nil then
-      table.insert(lines, key .. ": " .. tostring(value))
-    else
-      table.insert(lines, key .. ":")
-    end
+    serialize_value(lines, key, metadata[key])
   end
 
   for key, value in pairs(metadata) do
@@ -74,11 +96,7 @@ function M.serialize(metadata)
       end
     end
     if not found then
-      if value ~= nil then
-        table.insert(lines, key .. ": " .. tostring(value))
-      else
-        table.insert(lines, key .. ":")
-      end
+      serialize_value(lines, key, value)
     end
   end
 

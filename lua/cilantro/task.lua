@@ -40,6 +40,7 @@ local function build_task(metadata, path, body_lines)
     end_date = metadata.end_date,
     completed_at = metadata.completed_at,
     estimated_minutes = metadata.estimated_minutes and tonumber(metadata.estimated_minutes),
+    subtasks = metadata.subtasks or {},
     path = path,
     body_lines = body_lines,
   }
