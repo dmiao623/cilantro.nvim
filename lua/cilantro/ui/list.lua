@@ -68,43 +68,56 @@ local function task_display_name(t)
   return dir:gsub("/", " / ") .. " / " .. title
 end
 
-local function render_task_line(t)
+local function render_task_line(t, opts)
+  opts = opts or {}
   local icon = STATUS_ICONS[t.status] or "[?]"
   local name = task_display_name(t)
-  local date = t.end_date or ""
   local minutes = t.estimated_minutes and (t.estimated_minutes .. "m") or "-"
 
   local title_col = pad_right(name, 50)
-  local date_col = pad_right(date, 12)
   local min_col = pad_right(minutes, 6)
+
+  if opts.show_date == false then
+    return "  " .. icon .. " " .. title_col .. " " .. min_col
+  end
+
+  local date = t.end_date or ""
+  local date_col = pad_right(date, 12)
 
   return "  " .. icon .. " " .. title_col .. " " .. date_col .. " " .. min_col
 end
 
-local function task_line_highlights(t, line_idx)
+local function task_line_highlights(t, line_idx, opts)
+  opts = opts or {}
   local icon = STATUS_ICONS[t.status] or "[?]"
   local title_col_width = 50
-  local date_col_width = 12
 
   local status_hl = STATUS_HL[t.status] or "CilantroStatusTodo"
   local title_hl = t.status == "done" and "CilantroTitleDone" or "CilantroTitle"
-  local date_hl = t.status == "done" and "CilantroTitleDone" or "CilantroDate"
   local min_hl = t.status == "done" and "CilantroTitleDone" or "CilantroMinutes"
 
   local icon_start = 2
   local icon_end = icon_start + #icon
   local title_start = icon_end + 1
   local title_end = title_start + title_col_width
-  local date_start = title_end + 1
-  local date_end = date_start + date_col_width
-  local min_start = date_end + 1
 
   local hls = {
     { line_idx, status_hl, icon_start, icon_end },
     { line_idx, title_hl, title_start, title_end },
-    { line_idx, date_hl, date_start, date_end },
-    { line_idx, min_hl, min_start, -1 },
   }
+
+  if opts.show_date == false then
+    local min_start = title_end + 1
+    table.insert(hls, { line_idx, min_hl, min_start, -1 })
+  else
+    local date_col_width = 12
+    local date_hl = t.status == "done" and "CilantroTitleDone" or "CilantroDate"
+    local date_start = title_end + 1
+    local date_end = date_start + date_col_width
+    local min_start = date_end + 1
+    table.insert(hls, { line_idx, date_hl, date_start, date_end })
+    table.insert(hls, { line_idx, min_hl, min_start, -1 })
+  end
 
   return hls
 end
@@ -147,6 +160,7 @@ function M.render()
     end
   end
 
+  query.secondary_sort_by = M.show_paths and "path" or "title"
   local tasks = index.query(query)
 
   vim.api.nvim_set_option_value("modifiable", true, { buf = buf })
@@ -166,12 +180,13 @@ function M.render()
   local highlights = {}
   local sort_by = query.sort_by or "end_date"
   local show_headers = sort_by == "end_date"
+  local task_opts = { show_date = not show_headers }
   local line_idx = 0
 
   local function append_task(t)
-    table.insert(lines, render_task_line(t))
+    table.insert(lines, render_task_line(t, task_opts))
     table.insert(M.task_ids, t.id)
-    for _, hl in ipairs(task_line_highlights(t, line_idx)) do
+    for _, hl in ipairs(task_line_highlights(t, line_idx, task_opts)) do
       table.insert(highlights, hl)
     end
     line_idx = line_idx + 1
@@ -192,6 +207,11 @@ function M.render()
     for _, t in ipairs(tasks) do
       local task_date = t.end_date or "No end date"
       if task_date ~= current_date then
+        if current_date ~= nil then
+          table.insert(lines, "")
+          table.insert(M.task_ids, false)
+          line_idx = line_idx + 1
+        end
         current_date = task_date
         local header = "── " .. current_date .. " ──"
         table.insert(lines, header)

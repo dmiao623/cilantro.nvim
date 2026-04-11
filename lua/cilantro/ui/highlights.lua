@@ -10,7 +10,7 @@ function M.setup()
     CilantroTitleDone = { link = "DiagnosticOk" },
     CilantroDate = { link = "Number" },
     CilantroMinutes = { link = "Special" },
-    CilantroHeader = { link = "Title" },
+    CilantroHeader = { link = "Comment" },
     CilantroEmpty = { link = "Comment" },
   }
 

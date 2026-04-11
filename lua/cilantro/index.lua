@@ -108,6 +108,8 @@ function M.query(opts)
     status_index[s] = i
   end
 
+  local secondary_sort_by = opts.secondary_sort_by or "title"
+
   table.sort(results, function(a, b)
     local va, vb
     if sort_by == "status" then
@@ -125,11 +127,17 @@ function M.query(opts)
       vb = b[sort_by] or ""
     end
 
-    if sort_desc then
-      return va > vb
-    else
-      return va < vb
+    if va ~= vb then
+      if sort_desc then
+        return va > vb
+      else
+        return va < vb
+      end
     end
+
+    local sa = (a[secondary_sort_by] or ""):lower()
+    local sb = (b[secondary_sort_by] or ""):lower()
+    return sa < sb
   end)
 
   return results
