@@ -19,7 +19,7 @@ Using `lazy.nvim`:
 
 ```lua
 {
-  "dustinm/cilantro.nvim",
+  "dmiao623/cilantro.nvim",
   config = function()
     require("cilantro").setup({
       task_dir = "~/tasks",
