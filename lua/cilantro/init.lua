@@ -69,9 +69,40 @@ function M.setup(opts)
 
       local bufnr = ev.buf
       local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-      local metadata, _, _ = fm.parse(lines)
+      local metadata, fm_end, _ = fm.parse(lines)
 
       if not metadata.id or not metadata.title then
+        if fm_end == 0 then
+          local new_lines, new_task = task_mod.bootstrap_lines(lines, ev.file)
+          if new_lines and new_task then
+            writing = true
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
+
+            local expected_filename = task_mod.make_filename(new_task.title)
+            local current_filename = vim.fn.fnamemodify(ev.file, ":t")
+
+            if expected_filename ~= current_filename then
+              local dir = vim.fn.fnamemodify(ev.file, ":h")
+              local new_path = dir .. "/" .. expected_filename
+              vim.cmd("noautocmd saveas! " .. vim.fn.fnameescape(new_path))
+              vim.fn.delete(ev.file)
+              new_task.path = new_path
+              idx.remove(ev.file)
+              refresh_oil()
+            else
+              vim.cmd("noautocmd write")
+            end
+
+            idx.put(new_task)
+            writing = false
+
+            if list.is_visible() then
+              list.render()
+            end
+            return
+          end
+        end
+
         idx.refresh_path(ev.file)
         if list.is_visible() then
           list.render()

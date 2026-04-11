@@ -170,7 +170,18 @@ function M.watch()
     debounce_timer:start(100, 0, vim.schedule_wrap(function()
       local path = cfg.task_dir .. "/" .. filename
       if vim.fn.filereadable(path) == 1 then
-        M.refresh_path(path)
+        local t, _ = task_mod.from_file(path)
+        if t then
+          M.put(t)
+        else
+          local bufnr = vim.fn.bufnr(path)
+          if bufnr == -1 or not vim.api.nvim_buf_is_loaded(bufnr) then
+            t = task_mod.bootstrap_file(path)
+            if t then
+              M.put(t)
+            end
+          end
+        end
       else
         M.remove(path)
       end

@@ -21,6 +21,10 @@ function M.make_filename(title)
   return M.slugify(title) .. ".md"
 end
 
+function M.title_from_filename(filename)
+  return filename:gsub("%.md$", "")
+end
+
 local function now_iso()
   return os.date("!%Y-%m-%dT%H:%M:%S") .. "Z"
 end
@@ -112,6 +116,53 @@ function M.create(title, dir, overrides)
   vim.fn.writefile(lines, path)
 
   return build_task(metadata, path, { "" })
+end
+
+function M.bootstrap_lines(lines, path)
+  local _, fm_end, body_lines = frontmatter.parse(lines)
+
+  if fm_end > 0 then
+    return nil, nil
+  end
+
+  local filename = vim.fn.fnamemodify(path, ":t")
+  local title = M.title_from_filename(filename)
+
+  local task_id = id.generate()
+  local now = now_iso()
+  local cfg = config.get()
+
+  local new_metadata = {
+    id = task_id,
+    title = title,
+    status = cfg.default_status,
+    created_at = now,
+    updated_at = now,
+    start_date = today_iso(),
+  }
+
+  local new_lines = frontmatter.serialize(new_metadata)
+  table.insert(new_lines, "")
+  for _, line in ipairs(body_lines) do
+    table.insert(new_lines, line)
+  end
+
+  return new_lines, build_task(new_metadata, path, body_lines)
+end
+
+function M.bootstrap_file(path)
+  local ok, lines = pcall(vim.fn.readfile, path)
+  if not ok or not lines then
+    return nil
+  end
+
+  local new_lines, task = M.bootstrap_lines(lines, path)
+  if not new_lines then
+    return nil
+  end
+
+  vim.fn.writefile(new_lines, path)
+  return task
 end
 
 function M.update(task, changes)
