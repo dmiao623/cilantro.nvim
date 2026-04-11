@@ -17,8 +17,8 @@ function M.slugify(title)
   return slug
 end
 
-function M.make_filename(task_id, title)
-  return task_id .. "-" .. M.slugify(title) .. ".md"
+function M.make_filename(title)
+  return M.slugify(title) .. ".md"
 end
 
 local function now_iso()
@@ -27,6 +27,25 @@ end
 
 local function today_iso()
   return os.date("%Y-%m-%d")
+end
+
+local function normalize_subtasks(raw)
+  if not raw then
+    return {}
+  end
+  local result = {}
+  local cfg = config.get()
+  for _, item in ipairs(raw) do
+    if type(item) == "string" then
+      table.insert(result, { name = item, status = cfg.default_status })
+    elseif type(item) == "table" then
+      table.insert(result, {
+        name = item.name or "(unnamed)",
+        status = item.status or cfg.default_status,
+      })
+    end
+  end
+  return result
 end
 
 local function build_task(metadata, path, body_lines)
@@ -40,7 +59,7 @@ local function build_task(metadata, path, body_lines)
     end_date = metadata.end_date,
     completed_at = metadata.completed_at,
     estimated_minutes = metadata.estimated_minutes and tonumber(metadata.estimated_minutes),
-    subtasks = metadata.subtasks or {},
+    subtasks = normalize_subtasks(metadata.subtasks),
     path = path,
     body_lines = body_lines,
   }
@@ -84,7 +103,7 @@ function M.create(title, dir, overrides)
     estimated_minutes = overrides.estimated_minutes,
   }
 
-  local filename = M.make_filename(task_id, title)
+  local filename = M.make_filename(title)
   local path = dir .. "/" .. filename
 
   local lines = frontmatter.serialize(metadata)

@@ -84,7 +84,7 @@ function M.setup(opts)
       local new_lines = fm.replace_frontmatter(lines, metadata)
 
       -- Check if title changed (needs file rename)
-      local expected_filename = task_mod.make_filename(metadata.id, metadata.title)
+      local expected_filename = task_mod.make_filename(metadata.title)
       local current_filename = vim.fn.fnamemodify(ev.file, ":t")
       local needs_rename = expected_filename ~= current_filename
 

@@ -5,6 +5,7 @@ local M = {}
 
 M.bufnr = nil
 M.task_ids = {}
+M.subtask_idx = {}
 M.query_opts = {}
 M.hide_done = false
 M.show_paths = true
@@ -108,6 +109,26 @@ local function task_line_highlights(t, line_idx)
   return hls
 end
 
+local function render_subtask_line(subtask)
+  local icon = STATUS_ICONS[subtask.status] or "[?]"
+  return "      " .. icon .. " " .. (subtask.name or "(unnamed)")
+end
+
+local function subtask_line_highlights(subtask, line_idx)
+  local icon = STATUS_ICONS[subtask.status] or "[?]"
+  local status_hl = STATUS_HL[subtask.status] or "CilantroStatusTodo"
+  local title_hl = subtask.status == "done" and "CilantroTitleDone" or "CilantroTitle"
+
+  local icon_start = 6
+  local icon_end = icon_start + #icon
+  local title_start = icon_end + 1
+
+  return {
+    { line_idx, status_hl, icon_start, icon_end },
+    { line_idx, title_hl, title_start, -1 },
+  }
+end
+
 function M.render()
   local buf = M.get_buf()
 
@@ -132,6 +153,7 @@ function M.render()
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
 
   M.task_ids = {}
+  M.subtask_idx = {}
 
   if #tasks == 0 then
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "  No tasks found. Press 'a' to create one." })
@@ -146,6 +168,25 @@ function M.render()
   local show_headers = sort_by == "end_date"
   local line_idx = 0
 
+  local function append_task(t)
+    table.insert(lines, render_task_line(t))
+    table.insert(M.task_ids, t.id)
+    for _, hl in ipairs(task_line_highlights(t, line_idx)) do
+      table.insert(highlights, hl)
+    end
+    line_idx = line_idx + 1
+
+    for si, subtask in ipairs(t.subtasks) do
+      table.insert(lines, render_subtask_line(subtask))
+      table.insert(M.task_ids, t.id)
+      M.subtask_idx[#M.task_ids] = si
+      for _, hl in ipairs(subtask_line_highlights(subtask, line_idx)) do
+        table.insert(highlights, hl)
+      end
+      line_idx = line_idx + 1
+    end
+  end
+
   if show_headers then
     local current_date = nil
     for _, t in ipairs(tasks) do
@@ -158,21 +199,11 @@ function M.render()
         table.insert(highlights, { line_idx, "CilantroHeader", 0, -1 })
         line_idx = line_idx + 1
       end
-      table.insert(lines, render_task_line(t))
-      table.insert(M.task_ids, t.id)
-      for _, hl in ipairs(task_line_highlights(t, line_idx)) do
-        table.insert(highlights, hl)
-      end
-      line_idx = line_idx + 1
+      append_task(t)
     end
   else
     for _, t in ipairs(tasks) do
-      table.insert(lines, render_task_line(t))
-      table.insert(M.task_ids, t.id)
-      for _, hl in ipairs(task_line_highlights(t, line_idx)) do
-        table.insert(highlights, hl)
-      end
-      line_idx = line_idx + 1
+      append_task(t)
     end
   end
 
@@ -228,21 +259,39 @@ end
 
 function M.cycle_status(direction)
   direction = direction or 1
-  local t = M.get_cursor_task()
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local tid = M.task_ids[row]
+  if not tid then
+    return
+  end
+
+  local t = index.tasks[tid]
   if not t then
     return
   end
 
   local cfg = config.get()
   local order = cfg.status_order
+  local sub_idx = M.subtask_idx[row]
+
+  local current_status
+  if sub_idx then
+    local subtask = t.subtasks[sub_idx]
+    if not subtask then
+      return
+    end
+    current_status = subtask.status
+  else
+    current_status = t.status
+  end
+
   local current_idx = nil
   for i, s in ipairs(order) do
-    if s == t.status then
+    if s == current_status then
       current_idx = i
       break
     end
   end
-
   if not current_idx then
     current_idx = 1
   end
@@ -251,7 +300,16 @@ function M.cycle_status(direction)
   local new_status = order[next_idx]
 
   local task_mod = require("cilantro.task")
-  local updated = task_mod.update(t, { status = new_status })
+  local changes
+  if sub_idx then
+    local new_subtasks = vim.deepcopy(t.subtasks)
+    new_subtasks[sub_idx].status = new_status
+    changes = { subtasks = new_subtasks }
+  else
+    changes = { status = new_status }
+  end
+
+  local updated = task_mod.update(t, changes)
   if updated then
     index.put(updated)
     M.render()

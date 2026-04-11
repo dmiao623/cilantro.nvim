@@ -43,10 +43,28 @@ function M.parse(lines)
       if value == "" then
         -- Check if next lines are list items (  - item)
         local list_items = {}
-        while i + 1 <= frontmatter_end - 1 and lines[i + 1]:match("^%s*-%s+(.+)$") do
+        while i + 1 <= frontmatter_end - 1 and lines[i + 1]:match("^%s*-%s+") do
           i = i + 1
-          local item = lines[i]:match("^%s*-%s+(.+)$")
-          table.insert(list_items, vim.trim(item))
+          local item_content = lines[i]:match("^%s*-%s+(.+)$")
+          if not item_content then
+            break
+          end
+          -- Check if this list item is a key: value pair (map item)
+          local item_key, item_val = item_content:match("^([%w_]+):%s*(.*)$")
+          if item_key then
+            local map = { [item_key] = vim.trim(item_val) }
+            -- Collect continuation lines (indented key: value without leading -)
+            while i + 1 <= frontmatter_end - 1
+              and not lines[i + 1]:match("^%s*-%s+")
+              and lines[i + 1]:match("^%s+([%w_]+):%s*(.*)$") do
+              i = i + 1
+              local k, v = lines[i]:match("^%s+([%w_]+):%s*(.*)$")
+              map[k] = vim.trim(v)
+            end
+            table.insert(list_items, map)
+          else
+            table.insert(list_items, vim.trim(item_content))
+          end
         end
         if #list_items > 0 then
           metadata[key] = list_items
@@ -68,11 +86,39 @@ function M.parse(lines)
   return metadata, frontmatter_end, body_lines
 end
 
+local MAP_ITEM_KEY_ORDER = { "name", "status" }
+
 local function serialize_value(lines, key, value)
   if type(value) == "table" then
     table.insert(lines, key .. ":")
     for _, item in ipairs(value) do
-      table.insert(lines, "  - " .. tostring(item))
+      if type(item) == "table" then
+        local first = true
+        local written = {}
+        for _, k in ipairs(MAP_ITEM_KEY_ORDER) do
+          if item[k] ~= nil then
+            if first then
+              table.insert(lines, "  - " .. k .. ": " .. tostring(item[k]))
+              first = false
+            else
+              table.insert(lines, "    " .. k .. ": " .. tostring(item[k]))
+            end
+            written[k] = true
+          end
+        end
+        for k, v in pairs(item) do
+          if not written[k] then
+            if first then
+              table.insert(lines, "  - " .. k .. ": " .. tostring(v))
+              first = false
+            else
+              table.insert(lines, "    " .. k .. ": " .. tostring(v))
+            end
+          end
+        end
+      else
+        table.insert(lines, "  - " .. tostring(item))
+      end
     end
   elseif value ~= nil then
     table.insert(lines, key .. ": " .. tostring(value))
