@@ -8,6 +8,7 @@ M.bufnr = nil
 M.event_ids = {}
 M.tree_win = nil
 M.layout_augroup = nil
+M.show_paths = true
 
 local ns = vim.api.nvim_create_namespace("CilantroCalendar")
 
@@ -69,9 +70,25 @@ function M.get_cursor_event()
 end
 
 local function render_event_line(e, width)
-  local time = datetime.format_time(e.start_time)
-  local prefix = time and ("  " .. time .. "  ") or "        "
+  local start_t = datetime.format_time(e.start_time)
+  local end_t = datetime.format_time(e.end_time)
+  local prefix
+  if start_t and end_t then
+    prefix = "  " .. start_t .. " - " .. end_t .. "  "
+  elseif start_t then
+    prefix = "  " .. start_t .. "  "
+  else
+    prefix = "        "
+  end
   local title = e.title or "(untitled)"
+  if M.show_paths and e.path then
+    local cfg = config.get()
+    local rel = e.path:gsub("^" .. vim.pesc(cfg.task_dir) .. "/", "")
+    local dir = vim.fn.fnamemodify(rel, ":h")
+    if dir ~= "." then
+      title = dir:gsub("/", " / ") .. " / " .. title
+    end
+  end
   local line = prefix .. title
   if e.recurring then
     line = line .. " \xe2\x86\xbb " .. e.recurring
@@ -80,9 +97,14 @@ local function render_event_line(e, width)
 end
 
 local function event_line_highlights(e, line_idx)
-  local time = datetime.format_time(e.start_time)
+  local start_t = datetime.format_time(e.start_time)
+  local end_t = datetime.format_time(e.end_time)
   local hls = {}
-  if time then
+  if start_t and end_t then
+    -- "  HH:MM - HH:MM  title" — time range is cols 2..16 (0-indexed bytes)
+    table.insert(hls, { line_idx, "CilantroEventTime", 2, 16 })
+    table.insert(hls, { line_idx, "CilantroTitle", 18, -1 })
+  elseif start_t then
     table.insert(hls, { line_idx, "CilantroEventTime", 2, 7 })
     table.insert(hls, { line_idx, "CilantroTitle", 9, -1 })
   else
@@ -91,18 +113,27 @@ local function event_line_highlights(e, line_idx)
   return hls
 end
 
--- Group events by start_time date.
+-- Group events by date. Multi-day events appear on each day they span:
+-- the start day uses the original event object; subsequent days use a
+-- shallow copy with a date-only start_time so no time prefix is shown.
 local function group_events_by_date(events)
   local groups = {}
   local order = {}
   for _, e in ipairs(events) do
-    local d = datetime.date_of(e.start_time)
-    if d then
+    local dates = datetime.enumerate_dates(e.start_time, e.end_time)
+    for i, d in ipairs(dates) do
       if not groups[d] then
         groups[d] = {}
         table.insert(order, d)
       end
-      table.insert(groups[d], e)
+      if i == 1 then
+        table.insert(groups[d], e)
+      else
+        -- Continuation day: keep original times so each day shows the full range
+        local occ = {}
+        for k, v in pairs(e) do occ[k] = v end
+        table.insert(groups[d], occ)
+      end
     end
   end
   return groups, order
@@ -422,6 +453,11 @@ function M.open_pair(opts)
   vim.api.nvim_set_current_win(target_win)
 end
 
+function M.toggle_paths()
+  M.show_paths = not M.show_paths
+  M.render_pair()
+end
+
 function M.close()
   local win = M.get_win()
   if win then
@@ -476,9 +512,9 @@ function M.setup_keymaps(bufnr)
     require("cilantro").close()
   end, "Close cilantro")
 
-  map(km.toggle_calendar, function()
-    require("cilantro.ui.list").toggle_calendar()
-  end, "Toggle calendar column")
+  map(km.toggle_paths, function()
+    M.toggle_paths()
+  end, "Toggle showing file paths")
 end
 
 return M

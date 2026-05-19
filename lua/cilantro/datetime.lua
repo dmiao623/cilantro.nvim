@@ -62,6 +62,32 @@ function M.default_end(tz)
   return os.date("%Y-%m-%d") .. "T23:59" .. (tz or "")
 end
 
+-- Returns a list of "YYYY-MM-DD" strings for every calendar day from
+-- start_value's date to end_value's date, inclusive.
+function M.enumerate_dates(start_value, end_value)
+  local start_date = M.date_of(start_value)
+  if not start_date then
+    return {}
+  end
+  local end_date = M.date_of(end_value) or start_date
+  if end_date < start_date then
+    end_date = start_date
+  end
+
+  local dates = {}
+  local y, mo, d = start_date:match("(%d%d%d%d)-(%d%d)-(%d%d)")
+  local t = os.time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = 12 })
+  while true do
+    local current = os.date("%Y-%m-%d", t)
+    table.insert(dates, current)
+    if current >= end_date then
+      break
+    end
+    t = t + 86400
+  end
+  return dates
+end
+
 function M.compare(a, b)
   local na = M.start_of(a) or "9999-99-99T99:99"
   local nb = M.start_of(b) or "9999-99-99T99:99"

@@ -19,7 +19,6 @@ local function build_event(metadata, path, body_lines)
     updated_at = metadata.updated_at,
     start_time = metadata.start_time,
     end_time = metadata.end_time,
-    length = metadata.length,
     recurring = metadata.recurring,
     path = path,
     body_lines = body_lines,
@@ -64,7 +63,6 @@ function M.create(title, dir, overrides)
     updated_at = now,
     start_time = overrides.start_time or datetime.default_start(cfg.timezone),
     end_time = overrides.end_time or datetime.default_end(cfg.timezone),
-    length = overrides.length,
     recurring = overrides.recurring,
   }
 

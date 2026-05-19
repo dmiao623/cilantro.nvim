@@ -15,7 +15,7 @@ local SHARED_ORDER = {
 local TASK_DATA_ORDER = { "status", "completed_at", "subtasks" }
 
 -- Fields nested under `event-data:`, in serialization order.
-local EVENT_DATA_ORDER = { "length", "recurring" }
+local EVENT_DATA_ORDER = { "recurring" }
 
 local MAP_ITEM_KEY_ORDER = { "name", "status" }
 

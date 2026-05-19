@@ -448,25 +448,6 @@ function M.toggle_paths()
   M.render()
 end
 
-function M.toggle_calendar()
-  local cfg = config.get()
-  cfg.calendar.enabled = not cfg.calendar.enabled
-  local calendar = require("cilantro.ui.calendar")
-  if cfg.calendar.enabled then
-    if M.is_visible() and not calendar.is_visible() then
-      local list_win = M.get_win()
-      if list_win then
-        calendar.open_pair({ win = list_win })
-        return
-      end
-    end
-  else
-    if calendar.is_visible() then
-      calendar.close()
-    end
-  end
-  M.render()
-end
 
 function M.setup_keymaps(bufnr)
   local cfg = config.get()
@@ -535,10 +516,6 @@ function M.setup_keymaps(bufnr)
   map(km.toggle_paths, function()
     M.toggle_paths()
   end, "Toggle showing file paths")
-
-  map(km.toggle_calendar, function()
-    M.toggle_calendar()
-  end, "Toggle calendar column")
 
   map(km.refresh, function()
     require("cilantro").refresh()

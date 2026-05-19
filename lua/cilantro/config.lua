@@ -36,7 +36,6 @@ M.defaults = {
     sort_alpha = "sa",
     toggle_done = "td",
     toggle_paths = "tp",
-    toggle_calendar = "tc",
     refresh = "R",
     focus = "<C-f>",
     close = "q",
