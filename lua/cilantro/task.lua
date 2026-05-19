@@ -55,12 +55,13 @@ end
 local function build_task(metadata, path, body_lines)
   return {
     id = metadata.id,
+    type = "task",
     title = metadata.title,
     status = metadata.status,
     created_at = metadata.created_at,
     updated_at = metadata.updated_at,
-    start_date = metadata.start_date,
-    end_date = metadata.end_date,
+    start_time = metadata.start_time,
+    end_time = metadata.end_time,
     completed_at = metadata.completed_at,
     estimated_minutes = metadata.estimated_minutes and tonumber(metadata.estimated_minutes),
     subtasks = normalize_subtasks(metadata.subtasks),
@@ -79,6 +80,9 @@ end
 
 function M.from_lines(lines, path)
   local metadata, _, body_lines = frontmatter.parse(lines)
+  if metadata.type and metadata.type ~= "task" then
+    return nil, "not a task: " .. (path or "unknown")
+  end
   if not metadata.id then
     return nil, "missing id in frontmatter: " .. (path or "unknown")
   end
@@ -96,13 +100,14 @@ function M.create(title, dir, overrides)
   local now = now_iso()
 
   local metadata = {
+    type = "task",
     id = task_id,
     title = title,
     status = overrides.status or cfg.default_status,
     created_at = now,
     updated_at = now,
-    start_date = overrides.start_date or today_iso(),
-    end_date = overrides.end_date,
+    start_time = overrides.start_time or today_iso(),
+    end_time = overrides.end_time,
     completed_at = overrides.completed_at,
     estimated_minutes = overrides.estimated_minutes,
   }
@@ -133,12 +138,13 @@ function M.bootstrap_lines(lines, path)
   local cfg = config.get()
 
   local new_metadata = {
+    type = "task",
     id = task_id,
     title = title,
     status = cfg.default_status,
     created_at = now,
     updated_at = now,
-    start_date = today_iso(),
+    start_time = today_iso(),
   }
 
   local new_lines = frontmatter.serialize(new_metadata)
@@ -177,6 +183,7 @@ function M.update(task, changes)
     metadata[key] = value
   end
 
+  metadata.type = metadata.type or "task"
   metadata.updated_at = now_iso()
 
   if changes.status == "done" and not changes.completed_at then

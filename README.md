@@ -2,13 +2,15 @@
 
 A file-based task manager for Neovim.
 
-Tasks are stored as individual Markdown files with YAML frontmatter. The plugin provides a queryable task list, while task files remain ordinary editable buffers.
+Tasks and events are stored as individual Markdown files with YAML frontmatter. The plugin provides a queryable task list with an optional calendar column, while files remain ordinary editable buffers.
 
 ## Features
 
-- File-based task storage
-- Markdown task files with YAML frontmatter
+- File-based task and event storage
+- Markdown files with YAML frontmatter
+- Three-panel layout: file tree, events, and tasks
 - Queryable task list UI
+- Calendar column with synchronized scrolling
 - Simple task creation and status updates
 - Sort and filter support
 - Customizable keymaps

@@ -5,12 +5,21 @@ M.defaults = {
   status_order = { "todo", "in_progress", "done", "cancelled" },
   default_status = "todo",
   peek_height = 15,
-  list_columns = { "status", "title", "end_date", "estimated_minutes" },
+  list_columns = { "status", "title", "end_time", "estimated_minutes" },
+  calendar = {
+    enabled = true,
+    width = 28,
+  },
+  layout = {
+    -- Width ratio of the three panels: file tree : events : tasks
+    ratio = { 1, 2, 2 },
+  },
   keymaps = {
     open = "<CR>",
     cycle_status = "x",
     cycle_status_back = "X",
     create = "a",
+    create_event = "A",
     filter = "f",
     sort = "s",
     sort_direction = "S",
@@ -19,6 +28,7 @@ M.defaults = {
     sort_alpha = "sa",
     toggle_done = "td",
     toggle_paths = "tp",
+    toggle_calendar = "tc",
     refresh = "R",
     focus = "<C-f>",
     close = "q",

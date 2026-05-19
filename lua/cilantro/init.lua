@@ -56,13 +56,14 @@ function M.setup(opts)
 
   vim.api.nvim_create_autocmd("BufWritePost", {
     group = augroup,
-    pattern = cfg.task_dir .. "/**/*.md",
+    pattern = { cfg.task_dir .. "/*.md", cfg.task_dir .. "/**/*.md" },
     callback = function(ev)
       if writing then
         return
       end
 
       local task_mod = require("cilantro.task")
+      local event_mod = require("cilantro.event")
       local fm = require("cilantro.frontmatter")
       local idx = require("cilantro.index")
       local list = require("cilantro.ui.list")
@@ -71,8 +72,11 @@ function M.setup(opts)
       local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
       local metadata, fm_end, _ = fm.parse(lines)
 
+      local is_event = metadata.type == "event"
+      local model = is_event and event_mod or task_mod
+
       if not metadata.id or not metadata.title then
-        if fm_end == 0 then
+        if fm_end == 0 and not is_event then
           local new_lines, new_task = task_mod.bootstrap_lines(lines, ev.file)
           if new_lines and new_task then
             writing = true
@@ -110,7 +114,8 @@ function M.setup(opts)
         return
       end
 
-      -- Update updated_at
+      -- Update updated_at, ensure type is preserved
+      metadata.type = metadata.type or "task"
       metadata.updated_at = os.date("!%Y-%m-%dT%H:%M:%S") .. "Z"
       local new_lines = fm.replace_frontmatter(lines, metadata)
 
@@ -129,9 +134,9 @@ function M.setup(opts)
         vim.cmd("noautocmd saveas! " .. vim.fn.fnameescape(new_path))
         vim.fn.delete(ev.file)
         idx.remove(ev.file)
-        local t = task_mod.from_file(new_path)
-        if t then
-          idx.put(t)
+        local item = model.from_file(new_path)
+        if item then
+          idx.put(item)
         end
         refresh_oil()
       else
@@ -167,12 +172,24 @@ end
 function M.close()
   local peek = require("cilantro.ui.peek")
   local list = require("cilantro.ui.list")
+  local calendar = require("cilantro.ui.calendar")
 
   peek.close()
 
+  calendar.teardown_layout()
+
+  if calendar.is_visible() then
+    calendar.close()
+  end
+
   local list_win = list.get_win()
   if list_win then
-    vim.api.nvim_win_close(list_win, false)
+    if #vim.api.nvim_tabpage_list_wins(0) <= 1 then
+      -- Last window: can't close it, so swap in an empty buffer instead.
+      vim.api.nvim_win_set_buf(list_win, vim.api.nvim_create_buf(true, false))
+    else
+      vim.api.nvim_win_close(list_win, false)
+    end
   end
 end
 
@@ -225,6 +242,51 @@ function M.create_task(input)
     do_create(input)
   else
     vim.ui.input({ prompt = "Task (path/to/title): " }, function(val)
+      do_create(val)
+    end)
+  end
+end
+
+function M.create_event(input)
+  local cfg = require("cilantro.config").get()
+  local event_mod = require("cilantro.event")
+  local index = require("cilantro.index")
+  local list = require("cilantro.ui.list")
+
+  local function do_create(raw)
+    if not raw or raw == "" then
+      return
+    end
+
+    local title = vim.fn.fnamemodify(raw, ":t")
+    local parent = vim.fn.fnamemodify(raw, ":h")
+
+    local dir
+    if parent == "." then
+      dir = cfg.task_dir
+    else
+      dir = cfg.task_dir .. "/" .. parent
+    end
+
+    vim.fn.mkdir(dir, "p")
+
+    local event = event_mod.create(title, dir)
+    index.put(event)
+
+    if list.is_visible() then
+      list.render()
+    end
+
+    refresh_oil()
+
+    local peek = require("cilantro.ui.peek")
+    peek.open(event)
+  end
+
+  if input then
+    do_create(input)
+  else
+    vim.ui.input({ prompt = "Event (path/to/title): " }, function(val)
       do_create(val)
     end)
   end

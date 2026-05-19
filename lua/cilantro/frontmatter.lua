@@ -1,15 +1,17 @@
 local M = {}
 
 M.FIELD_ORDER = {
+  "type",
   "id",
   "title",
   "status",
   "created_at",
   "updated_at",
-  "start_date",
-  "end_date",
+  "start_time",
+  "end_time",
   "completed_at",
   "estimated_minutes",
+  "recurring",
   "subtasks",
 }
 
@@ -78,6 +80,15 @@ function M.parse(lines)
     i = i + 1
   end
 
+  if metadata.start_date and not metadata.start_time then
+    metadata.start_time = metadata.start_date
+    metadata.start_date = nil
+  end
+  if metadata.end_date and not metadata.end_time then
+    metadata.end_time = metadata.end_date
+    metadata.end_date = nil
+  end
+
   local body_lines = {}
   for i = frontmatter_end + 1, #lines do
     table.insert(body_lines, lines[i])
@@ -89,7 +100,13 @@ end
 local MAP_ITEM_KEY_ORDER = { "name", "status" }
 
 local function serialize_value(lines, key, value)
+  if value == nil then
+    return
+  end
   if type(value) == "table" then
+    if #value == 0 then
+      return
+    end
     table.insert(lines, key .. ":")
     for _, item in ipairs(value) do
       if type(item) == "table" then
@@ -120,10 +137,8 @@ local function serialize_value(lines, key, value)
         table.insert(lines, "  - " .. tostring(item))
       end
     end
-  elseif value ~= nil then
-    table.insert(lines, key .. ": " .. tostring(value))
   else
-    table.insert(lines, key .. ":")
+    table.insert(lines, key .. ": " .. tostring(value))
   end
 end
 

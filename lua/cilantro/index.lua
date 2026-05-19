@@ -1,57 +1,110 @@
 local config = require("cilantro.config")
 local task_mod = require("cilantro.task")
+local event_mod = require("cilantro.event")
+local frontmatter = require("cilantro.frontmatter")
+local datetime = require("cilantro.datetime")
 
 local M = {}
 
 M.tasks = {}
+M.events = {}
 M.by_path = {}
 
 local watcher_handle = nil
 local debounce_timer = nil
 
+local function detect_type(path)
+  local ok, lines = pcall(vim.fn.readfile, path)
+  if not ok or not lines then
+    return nil
+  end
+  local metadata = frontmatter.parse(lines)
+  if metadata.type == "event" then
+    return "event"
+  end
+  return "task"
+end
+
+local function load_path(path)
+  local kind = detect_type(path)
+  if kind == "event" then
+    local e = event_mod.from_file(path)
+    if e then
+      return "event", e
+    end
+  else
+    local t = task_mod.from_file(path)
+    if t then
+      return "task", t
+    end
+  end
+  return nil, nil
+end
+
 function M.build(task_dir)
   task_dir = task_dir or config.get().task_dir
   M.tasks = {}
+  M.events = {}
   M.by_path = {}
 
   local files = vim.fn.glob(task_dir .. "/**/*.md", false, true)
   for _, path in ipairs(files) do
-    local t, err = task_mod.from_file(path)
-    if t then
-      M.tasks[t.id] = t
-      M.by_path[path] = t.id
+    local kind, item = load_path(path)
+    if kind == "task" then
+      M.tasks[item.id] = item
+      M.by_path[path] = { kind = "task", id = item.id }
+    elseif kind == "event" then
+      M.events[item.id] = item
+      M.by_path[path] = { kind = "event", id = item.id }
     end
   end
 
   return M
 end
 
-function M.put(task)
-  if not task or not task.id then
+function M.put(item)
+  if not item or not item.id then
     return
   end
-  -- Remove old path mapping if task moved
-  for path, tid in pairs(M.by_path) do
-    if tid == task.id and path ~= task.path then
+  local kind = item.type or "task"
+  local store = kind == "event" and M.events or M.tasks
+
+  for path, entry in pairs(M.by_path) do
+    if entry.kind == kind and entry.id == item.id and path ~= item.path then
       M.by_path[path] = nil
     end
   end
-  M.tasks[task.id] = task
-  M.by_path[task.path] = task.id
+
+  store[item.id] = item
+  M.by_path[item.path] = { kind = kind, id = item.id }
 end
 
 function M.remove(path)
-  local tid = M.by_path[path]
-  if tid then
-    M.tasks[tid] = nil
-    M.by_path[path] = nil
+  local entry = M.by_path[path]
+  if not entry then
+    return
   end
+  if entry.kind == "event" then
+    M.events[entry.id] = nil
+  else
+    M.tasks[entry.id] = nil
+  end
+  M.by_path[path] = nil
 end
 
 function M.refresh_path(path)
-  local t, _ = task_mod.from_file(path)
-  if t then
-    M.put(t)
+  local kind, item = load_path(path)
+  if item then
+    -- If kind changed for this path, drop the old entry first
+    local existing = M.by_path[path]
+    if existing and existing.kind ~= kind then
+      if existing.kind == "event" then
+        M.events[existing.id] = nil
+      else
+        M.tasks[existing.id] = nil
+      end
+    end
+    M.put(item)
   else
     M.remove(path)
   end
@@ -97,7 +150,7 @@ function M.query(opts)
     end
   end
 
-  local sort_by = opts.sort_by or "end_date"
+  local sort_by = opts.sort_by or "end_time"
   local sort_desc = opts.sort_desc
   if sort_desc == nil then
     sort_desc = false
@@ -118,10 +171,12 @@ function M.query(opts)
     elseif sort_by == "estimated_minutes" then
       va = a.estimated_minutes or 0
       vb = b.estimated_minutes or 0
-    elseif sort_by == "end_date" then
-      -- Tasks without end_date sort last
-      va = a.end_date or "9999-99-99"
-      vb = b.end_date or "9999-99-99"
+    elseif sort_by == "end_time" then
+      va = datetime.end_of(a.end_time) or "9999-99-99T99:99"
+      vb = datetime.end_of(b.end_time) or "9999-99-99T99:99"
+    elseif sort_by == "start_time" then
+      va = datetime.start_of(a.start_time) or "9999-99-99T99:99"
+      vb = datetime.start_of(b.start_time) or "9999-99-99T99:99"
     else
       va = a[sort_by] or ""
       vb = b[sort_by] or ""
@@ -143,8 +198,30 @@ function M.query(opts)
   return results
 end
 
+function M.query_events(opts)
+  opts = opts or {}
+  local results = {}
+
+  for _, e in pairs(M.events) do
+    if e.start_time then
+      table.insert(results, e)
+    end
+  end
+
+  table.sort(results, function(a, b)
+    local va = datetime.start_of(a.start_time) or "9999-99-99T99:99"
+    local vb = datetime.start_of(b.start_time) or "9999-99-99T99:99"
+    if va ~= vb then
+      return va < vb
+    end
+    return (a.title or ""):lower() < (b.title or ""):lower()
+  end)
+
+  return results
+end
+
 function M.get()
-  if not next(M.tasks) and not M._built then
+  if not next(M.tasks) and not next(M.events) and not M._built then
     M.build()
     M._built = true
   end
@@ -178,13 +255,14 @@ function M.watch()
     debounce_timer:start(100, 0, vim.schedule_wrap(function()
       local path = cfg.task_dir .. "/" .. filename
       if vim.fn.filereadable(path) == 1 then
-        local t, _ = task_mod.from_file(path)
-        if t then
-          M.put(t)
+        local kind, item = load_path(path)
+        if item then
+          M.put(item)
         else
           local bufnr = vim.fn.bufnr(path)
-          if bufnr == -1 or not vim.api.nvim_buf_is_loaded(bufnr) then
-            t = task_mod.bootstrap_file(path)
+          if (bufnr == -1 or not vim.api.nvim_buf_is_loaded(bufnr))
+            and (kind == nil or kind == "task") then
+            local t = task_mod.bootstrap_file(path)
             if t then
               M.put(t)
             end

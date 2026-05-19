@@ -1,5 +1,6 @@
 local config = require("cilantro.config")
 local index = require("cilantro.index")
+local datetime = require("cilantro.datetime")
 
 local M = {}
 
@@ -57,7 +58,6 @@ local function task_display_name(t)
 
   local cfg = config.get()
   local rel = t.path:gsub("^" .. vim.pesc(cfg.task_dir) .. "/", "")
-  -- Strip the filename, keep only directory parts
   local dir = vim.fn.fnamemodify(rel, ":h")
   local title = t.title or "(untitled)"
 
@@ -68,7 +68,7 @@ local function task_display_name(t)
   return dir:gsub("/", " / ") .. " / " .. title
 end
 
-local function render_task_line(t, opts)
+function M.render_task_line(t, opts)
   opts = opts or {}
   local icon = STATUS_ICONS[t.status] or "[?]"
   local name = task_display_name(t)
@@ -81,13 +81,13 @@ local function render_task_line(t, opts)
     return "  " .. icon .. " " .. title_col .. " " .. min_col
   end
 
-  local date = t.end_date or ""
+  local date = datetime.date_of(t.end_time) or ""
   local date_col = pad_right(date, 12)
 
   return "  " .. icon .. " " .. title_col .. " " .. date_col .. " " .. min_col
 end
 
-local function task_line_highlights(t, line_idx, opts)
+function M.task_line_highlights(t, line_idx, opts)
   opts = opts or {}
   local icon = STATUS_ICONS[t.status] or "[?]"
   local title_col_width = 50
@@ -122,12 +122,12 @@ local function task_line_highlights(t, line_idx, opts)
   return hls
 end
 
-local function render_subtask_line(subtask)
+function M.render_subtask_line(subtask)
   local icon = STATUS_ICONS[subtask.status] or "[?]"
   return "      " .. icon .. " " .. (subtask.name or "(unnamed)")
 end
 
-local function subtask_line_highlights(subtask, line_idx)
+function M.subtask_line_highlights(subtask, line_idx)
   local icon = STATUS_ICONS[subtask.status] or "[?]"
   local status_hl = STATUS_HL[subtask.status] or "CilantroStatusTodo"
   local title_hl = subtask.status == "done" and "CilantroTitleDone" or "CilantroTitle"
@@ -142,10 +142,7 @@ local function subtask_line_highlights(subtask, line_idx)
   }
 end
 
-function M.render()
-  local buf = M.get_buf()
-
-  -- Apply hide_done filter
+function M.get_visible_tasks()
   local query = vim.tbl_extend("force", {}, M.query_opts)
   if M.hide_done then
     if not query.status then
@@ -159,9 +156,29 @@ function M.render()
       query.status = visible
     end
   end
-
   query.secondary_sort_by = M.show_paths and "path" or "title"
-  local tasks = index.query(query)
+  return index.query(query), query
+end
+
+-- Apply pre-built lines/highlights/ids to the list buffer.
+-- Used by calendar.render_pair to write into the right column.
+function M.apply_render(lines, highlights, task_ids, subtask_idx)
+  local buf = M.get_buf()
+  vim.api.nvim_set_option_value("modifiable", true, { buf = buf })
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  for _, hl in ipairs(highlights or {}) do
+    vim.api.nvim_buf_add_highlight(buf, ns, hl[2], hl[1], hl[3], hl[4])
+  end
+  vim.api.nvim_set_option_value("modifiable", false, { buf = buf })
+  M.task_ids = task_ids or {}
+  M.subtask_idx = subtask_idx or {}
+end
+
+-- Single-column render (no calendar). Pre-existing behaviour.
+function M.render_solo()
+  local buf = M.get_buf()
+  local tasks, query = M.get_visible_tasks()
 
   vim.api.nvim_set_option_value("modifiable", true, { buf = buf })
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
@@ -178,24 +195,24 @@ function M.render()
 
   local lines = {}
   local highlights = {}
-  local sort_by = query.sort_by or "end_date"
-  local show_headers = sort_by == "end_date"
+  local sort_by = query.sort_by or "end_time"
+  local show_headers = sort_by == "end_time"
   local task_opts = { show_date = not show_headers }
   local line_idx = 0
 
   local function append_task(t)
-    table.insert(lines, render_task_line(t, task_opts))
+    table.insert(lines, M.render_task_line(t, task_opts))
     table.insert(M.task_ids, t.id)
-    for _, hl in ipairs(task_line_highlights(t, line_idx, task_opts)) do
+    for _, hl in ipairs(M.task_line_highlights(t, line_idx, task_opts)) do
       table.insert(highlights, hl)
     end
     line_idx = line_idx + 1
 
     for si, subtask in ipairs(t.subtasks) do
-      table.insert(lines, render_subtask_line(subtask))
+      table.insert(lines, M.render_subtask_line(subtask))
       table.insert(M.task_ids, t.id)
       M.subtask_idx[#M.task_ids] = si
-      for _, hl in ipairs(subtask_line_highlights(subtask, line_idx)) do
+      for _, hl in ipairs(M.subtask_line_highlights(subtask, line_idx)) do
         table.insert(highlights, hl)
       end
       line_idx = line_idx + 1
@@ -205,7 +222,7 @@ function M.render()
   if show_headers then
     local current_date = nil
     for _, t in ipairs(tasks) do
-      local task_date = t.end_date or "No end date"
+      local task_date = datetime.date_of(t.end_time) or "No end date"
       if task_date ~= current_date then
         if current_date ~= nil then
           table.insert(lines, "")
@@ -236,12 +253,42 @@ function M.render()
   vim.api.nvim_set_option_value("modifiable", false, { buf = buf })
 end
 
+local function calendar_should_be_active()
+  local cfg = config.get()
+  if not cfg.calendar or not cfg.calendar.enabled then
+    return false
+  end
+  local sort_by = M.query_opts.sort_by or "end_time"
+  return sort_by == "end_time"
+end
+
+function M.render()
+  local calendar = require("cilantro.ui.calendar")
+  local active = calendar_should_be_active()
+
+  if not active and calendar.is_visible() then
+    calendar.close()
+  end
+
+  if active and calendar.is_visible() then
+    calendar.render_pair()
+  else
+    M.render_solo()
+  end
+end
+
 function M.open(opts)
   opts = opts or {}
   local buf = M.get_buf()
   local win = opts.win or vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
-  M.render()
+
+  if calendar_should_be_active() then
+    local calendar = require("cilantro.ui.calendar")
+    calendar.open_pair({ win = win })
+  else
+    M.render()
+  end
 end
 
 function M.get_cursor_task()
@@ -357,12 +404,22 @@ function M.set_filter()
 end
 
 function M.set_sort()
-  local fields = { "end_date", "created_at", "updated_at", "title", "status", "estimated_minutes", "start_date" }
+  local fields = { "end_time", "created_at", "updated_at", "title", "status", "estimated_minutes", "start_time" }
   vim.ui.select(fields, { prompt = "Sort by:" }, function(choice)
     if not choice then
       return
     end
     M.query_opts.sort_by = choice
+    if M.is_visible() and calendar_should_be_active() then
+      local calendar = require("cilantro.ui.calendar")
+      if not calendar.is_visible() then
+        local list_win = M.get_win()
+        if list_win then
+          calendar.open_pair({ win = list_win })
+          return
+        end
+      end
+    end
     M.render()
   end)
 end
@@ -373,7 +430,17 @@ function M.toggle_sort_direction()
 end
 
 function M.sort_by_end_date()
-  M.query_opts.sort_by = "end_date"
+  M.query_opts.sort_by = "end_time"
+  if M.is_visible() and calendar_should_be_active() then
+    local calendar = require("cilantro.ui.calendar")
+    if not calendar.is_visible() then
+      local list_win = M.get_win()
+      if list_win then
+        calendar.open_pair({ win = list_win })
+        return
+      end
+    end
+  end
   M.render()
 end
 
@@ -394,6 +461,26 @@ end
 
 function M.toggle_paths()
   M.show_paths = not M.show_paths
+  M.render()
+end
+
+function M.toggle_calendar()
+  local cfg = config.get()
+  cfg.calendar.enabled = not cfg.calendar.enabled
+  local calendar = require("cilantro.ui.calendar")
+  if cfg.calendar.enabled then
+    if M.is_visible() and not calendar.is_visible() then
+      local list_win = M.get_win()
+      if list_win then
+        calendar.open_pair({ win = list_win })
+        return
+      end
+    end
+  else
+    if calendar.is_visible() then
+      calendar.close()
+    end
+  end
   M.render()
 end
 
@@ -426,6 +513,10 @@ function M.setup_keymaps(bufnr)
     require("cilantro").create_task()
   end, "Create new task")
 
+  map(km.create_event, function()
+    require("cilantro").create_event()
+  end, "Create new event")
+
   map(km.filter, function()
     M.set_filter()
   end, "Set filter")
@@ -457,6 +548,10 @@ function M.setup_keymaps(bufnr)
   map(km.toggle_paths, function()
     M.toggle_paths()
   end, "Toggle showing file paths")
+
+  map(km.toggle_calendar, function()
+    M.toggle_calendar()
+  end, "Toggle calendar column")
 
   map(km.refresh, function()
     require("cilantro").refresh()

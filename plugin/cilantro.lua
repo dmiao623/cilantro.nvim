@@ -11,6 +11,10 @@ vim.api.nvim_create_user_command("CilantroCreate", function(cmd)
   require("cilantro").create_task(cmd.args ~= "" and cmd.args or nil)
 end, { nargs = "?", desc = "Create a new task" })
 
+vim.api.nvim_create_user_command("CilantroCreateEvent", function(cmd)
+  require("cilantro").create_event(cmd.args ~= "" and cmd.args or nil)
+end, { nargs = "?", desc = "Create a new event" })
+
 vim.api.nvim_create_user_command("CilantroRefresh", function()
   require("cilantro").refresh()
 end, { desc = "Refresh cilantro index" })

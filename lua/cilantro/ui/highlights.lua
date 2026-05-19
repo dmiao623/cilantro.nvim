@@ -12,6 +12,8 @@ function M.setup()
     CilantroMinutes = { link = "Special" },
     CilantroHeader = { link = "Comment" },
     CilantroEmpty = { link = "Comment" },
+    CilantroEventTime = { link = "Number" },
+    CilantroRecurring = { link = "Special" },
   }
 
   for name, def in pairs(groups) do

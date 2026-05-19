@@ -12,15 +12,17 @@ CONTENTS                                                    *cilantro-contents*
   4. Keymaps .............................. |cilantro-keymaps|
   5. Configuration ........................ |cilantro-configuration|
   6. Task Format .......................... |cilantro-task-format|
-  7. Highlights ........................... |cilantro-highlights|
+  7. Event Format ......................... |cilantro-event-format|
+  8. Calendar ............................. |cilantro-calendar|
+  9. Highlights ........................... |cilantro-highlights|
 
 ==============================================================================
 INTRODUCTION                                            *cilantro-introduction*
 
-Cilantro is a file-based task manager for Neovim. Tasks are stored as
-individual Markdown files with YAML frontmatter. Directories are used for
-human grouping only. The main pane provides a queryable task list, while
-task files are edited as ordinary buffers.
+Cilantro is a file-based task manager for Neovim. Tasks and events are stored
+as individual Markdown files with YAML frontmatter. Directories are used for
+human grouping only. The main pane provides a queryable task list with an
+optional calendar column, while files are edited as ordinary buffers.
 
 ==============================================================================
 SETUP                                                        *cilantro-setup*
@@ -50,16 +52,20 @@ COMMANDS                                                  *cilantro-commands*
 :Cilantro                                                        *:Cilantro*
   Open the cilantro task list.
 
-:CilantroCreate [title]                                    *:CilantroCreate*
-  Create a new task. If no title is given, prompts for one. After entering
-  a title, prompts for a directory path. Leave the path empty to use the
-  default `task_dir`.
+:CilantroCreate [path/to/title]                            *:CilantroCreate*
+  Create a new task. If no argument is given, prompts for one. The last
+  path segment becomes the title; earlier segments become subdirectories
+  under `task_dir`.
+
+:CilantroCreateEvent [path/to/title]                  *:CilantroCreateEvent*
+  Create a new event. Behaves like |:CilantroCreate| but writes an event
+  file (`type: event`). See |cilantro-event-format|.
 
 :CilantroRefresh                                          *:CilantroRefresh*
   Rebuild the index and re-render the task list.
 
 :CilantroClose                                              *:CilantroClose*
-  Close the cilantro UI (list and peek windows).
+  Close the cilantro UI (list, calendar, and peek windows).
 
 :CilantroToggle                                            *:CilantroToggle*
   Toggle the cilantro UI.
@@ -70,18 +76,31 @@ KEYMAPS                                                    *cilantro-keymaps*
 In the task list buffer:
 
   <CR>      Open task in peek split (lower horizontal split)
-  x         Cycle status forward (todo → in_progress → done → cancelled)
+  x         Cycle status forward (todo -> in_progress -> done -> cancelled)
   X         Cycle status backward
-  a         Create a new task (prompts for title, then directory path)
+  a         Create a new task (prompts for path/to/title)
+  A         Create a new event (prompts for path/to/title)
   f         Filter by status
   s         Change sort field
   S         Toggle sort direction (ascending/descending)
-  se        Sort by end date
+  se        Sort by end time
   sm        Sort by estimated minutes
   sa        Sort alphabetically by title
   td        Toggle showing completed (done) tasks
+  tp        Toggle showing file paths
+  tc        Toggle the calendar column
   R         Refresh index and re-render
   <C-f>     Open task in focus mode (full window)
+  q         Close cilantro
+
+In the calendar buffer:
+
+  <CR>      Open event in peek split
+  a         Create a new task
+  A         Create a new event
+  tc        Toggle the calendar column
+  R         Refresh index and re-render
+  <C-f>     Open event in focus mode
   q         Close cilantro
 
 In the peek split:
@@ -109,7 +128,18 @@ Configuration is passed to `require("cilantro").setup()`:
     peek_height = 15,
 
     -- Columns shown in the task list
-    list_columns = { "status", "title", "end_date", "estimated_minutes" },
+    list_columns = { "status", "title", "end_time", "estimated_minutes" },
+
+    -- Calendar column settings
+    calendar = {
+      enabled = true,  -- show the calendar column by default
+      width = 28,      -- width of the calendar column (in columns)
+    },
+
+    -- Panel width ratio: file tree : events : tasks
+    layout = {
+      ratio = { 1, 2, 2 },
+    },
 
     -- Keymap overrides (set to false to disable)
     keymaps = {
@@ -117,6 +147,7 @@ Configuration is passed to `require("cilantro").setup()`:
       cycle_status = "x",
       cycle_status_back = "X",
       create = "a",
+      create_event = "A",
       filter = "f",
       sort = "s",
       sort_direction = "S",
@@ -124,6 +155,8 @@ Configuration is passed to `require("cilantro").setup()`:
       sort_minutes = "sm",
       sort_alpha = "sa",
       toggle_done = "td",
+      toggle_paths = "tp",
+      toggle_calendar = "tc",
       refresh = "R",
       focus = "<C-f>",
       close = "q",
@@ -137,34 +170,102 @@ TASK FORMAT                                            *cilantro-task-format*
 Each task is a Markdown file with YAML frontmatter:
 >markdown
   ---
+  type: task
   id: 01HT...
   title: Draft billing migration plan
   status: in_progress
   created_at: 2026-04-05T10:42:00Z
   updated_at: 2026-04-05T11:10:00Z
-  start_date: 2026-04-05
-  end_date: 2026-04-12
-  completed_at:
+  start_time: 2026-04-05
+  end_time: 2026-04-12
   estimated_minutes: 90
   ---
   Notes for this task go here.
 <
 
-Filenames follow the pattern `<ID>-<slug>.md`. The ID is persistent;
-the slug is derived from the title. When the title is changed in the
-frontmatter and the file is saved, the file is automatically renamed
-to match and any open Oil.nvim buffers are refreshed.
+The `type` field defaults to `task` when absent. Filenames are the
+slugified title with a `.md` extension. When the title is changed in the
+frontmatter and the file is saved, the file is automatically renamed to
+match and any open Oil.nvim buffers are refreshed.
 
 The `updated_at` field is automatically set to the current time whenever
-the task file is saved.
+the file is saved.
 
-The `start_date` field defaults to the creation date when a new task is
+The `start_time` field defaults to the creation date when a new task is
 created.
 
 Status values: `todo`, `in_progress`, `done`, `cancelled`.
 
-When sorting by end date (the default), tasks are grouped under date
-headers. Tasks without an end date are sorted last.
+When sorting by end time (the default), tasks are grouped under date
+headers. Tasks without an end time are sorted last.
+
+The `start_time` and `end_time` fields accept either a date
+(`2026-04-05`) or a date with a time (`2026-04-05T14:00`). A date-only
+value is interpreted as `00:00` for `start_time` and `23:59` for
+`end_time`.
+
+Note: earlier versions used `start_date` / `end_date`. Files using the
+old names are still read correctly and are rewritten with the new names
+the next time they are saved.
+
+==============================================================================
+EVENT FORMAT                                          *cilantro-event-format*
+
+An event is a Markdown file with `type: event` in its frontmatter:
+>markdown
+  ---
+  type: event
+  id: 01HT...
+  title: Team standup
+  created_at: 2026-04-05T10:42:00Z
+  updated_at: 2026-04-05T11:10:00Z
+  start_time: 2026-04-06T09:00
+  end_time: 2026-04-06T09:15
+  recurring: weekly
+  ---
+  Notes for this event go here.
+<
+
+Events share the YAML structure of tasks but omit `status`,
+`estimated_minutes`, `completed_at`, and `subtasks`. They may carry a
+`recurring` field with one of: `daily`, `weekdays`, `weekly`, `monthly`,
+`yearly`.
+
+`start_time` and `end_time` follow the same date / date-time rules as
+tasks (see |cilantro-task-format|).
+
+Events are created with |:CilantroCreateEvent| and stored in the same
+`task_dir` as tasks.
+
+==============================================================================
+CALENDAR                                                  *cilantro-calendar*
+
+When the calendar is enabled (the default), |:Cilantro| opens a
+three-panel layout: a file tree on the left (an oil.nvim buffer rooted
+at `task_dir`), the calendar of events in the middle, and the task list
+on the right. Events appear in the calendar column; tasks appear in the
+list column.
+
+The relative widths of the three panels are set by `layout.ratio`
+(default `{ 1, 2, 2 }` — file tree : events : tasks). See
+|cilantro-configuration|.
+
+The file tree panel requires oil.nvim. If oil.nvim is not installed the
+panel is skipped and only the calendar and task columns are shown.
+
+Closing any panel (for example pressing `q`) closes all three together.
+
+Both columns are grouped under shared date headers: events are grouped by
+`start_time`, tasks by `end_time`, and the headers are aligned row-for-row
+across the two columns. The two windows scroll together (mouse wheel,
+`j` / `k`, `<C-d>` / `<C-u>`, etc.), so the dates always stay lined up.
+
+The calendar column is shown only while sorting by end time (the default).
+Choosing another sort field hides it; sorting by end time again, or
+pressing `tc`, brings it back.
+
+Recurring events are shown once, on their `start_time` date, with a `↻`
+marker. Events without a `start_time` are omitted from the calendar.
 
 ==============================================================================
 HIGHLIGHTS                                              *cilantro-highlights*
@@ -180,8 +281,10 @@ can be overridden in your colorscheme:
   CilantroTitleDone           Linked to |hl-DiagnosticOk|
   CilantroDate                Linked to |hl-Number|
   CilantroMinutes             Linked to |hl-Special|
-  CilantroHeader              Linked to |hl-Title|
+  CilantroHeader              Linked to |hl-Comment|
   CilantroEmpty               Linked to |hl-Comment|
+  CilantroEventTime           Linked to |hl-Number|
+  CilantroRecurring           Linked to |hl-Special|
 
 ==============================================================================
  vim:tw=78:ts=8:ft=help:norl:
