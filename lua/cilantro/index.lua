@@ -168,9 +168,6 @@ function M.query(opts)
     if sort_by == "status" then
       va = status_index[a.status] or 99
       vb = status_index[b.status] or 99
-    elseif sort_by == "estimated_minutes" then
-      va = a.estimated_minutes or 0
-      vb = b.estimated_minutes or 0
     elseif sort_by == "end_time" then
       va = datetime.end_of(a.end_time) or "9999-99-99T99:99"
       vb = datetime.end_of(b.end_time) or "9999-99-99T99:99"

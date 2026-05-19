@@ -1,6 +1,7 @@
 local config = require("cilantro.config")
 local id = require("cilantro.id")
 local frontmatter = require("cilantro.frontmatter")
+local datetime = require("cilantro.datetime")
 
 local M = {}
 
@@ -27,10 +28,6 @@ end
 
 local function now_iso()
   return os.date("!%Y-%m-%dT%H:%M:%S") .. "Z"
-end
-
-local function today_iso()
-  return os.date("%Y-%m-%d")
 end
 
 local function normalize_subtasks(raw)
@@ -63,7 +60,6 @@ local function build_task(metadata, path, body_lines)
     start_time = metadata.start_time,
     end_time = metadata.end_time,
     completed_at = metadata.completed_at,
-    estimated_minutes = metadata.estimated_minutes and tonumber(metadata.estimated_minutes),
     subtasks = normalize_subtasks(metadata.subtasks),
     path = path,
     body_lines = body_lines,
@@ -80,6 +76,7 @@ end
 
 function M.from_lines(lines, path)
   local metadata, _, body_lines = frontmatter.parse(lines)
+  metadata = frontmatter.flatten(metadata)
   if metadata.type and metadata.type ~= "task" then
     return nil, "not a task: " .. (path or "unknown")
   end
@@ -106,10 +103,9 @@ function M.create(title, dir, overrides)
     status = overrides.status or cfg.default_status,
     created_at = now,
     updated_at = now,
-    start_time = overrides.start_time or today_iso(),
-    end_time = overrides.end_time,
+    start_time = overrides.start_time or datetime.default_start(cfg.timezone),
+    end_time = overrides.end_time or datetime.default_end(cfg.timezone),
     completed_at = overrides.completed_at,
-    estimated_minutes = overrides.estimated_minutes,
   }
 
   local filename = M.make_filename(title)
@@ -144,7 +140,8 @@ function M.bootstrap_lines(lines, path)
     status = cfg.default_status,
     created_at = now,
     updated_at = now,
-    start_time = today_iso(),
+    start_time = datetime.default_start(cfg.timezone),
+    end_time = datetime.default_end(cfg.timezone),
   }
 
   local new_lines = frontmatter.serialize(new_metadata)
@@ -178,6 +175,7 @@ function M.update(task, changes)
   end
 
   local metadata, _, _ = frontmatter.parse(lines)
+  metadata = frontmatter.flatten(metadata)
 
   for key, value in pairs(changes) do
     metadata[key] = value

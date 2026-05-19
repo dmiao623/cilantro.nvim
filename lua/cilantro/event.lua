@@ -1,15 +1,13 @@
+local config = require("cilantro.config")
 local id = require("cilantro.id")
 local frontmatter = require("cilantro.frontmatter")
 local task = require("cilantro.task")
+local datetime = require("cilantro.datetime")
 
 local M = {}
 
 local function now_iso()
   return os.date("!%Y-%m-%dT%H:%M:%S") .. "Z"
-end
-
-local function today_iso()
-  return os.date("%Y-%m-%d")
 end
 
 local function build_event(metadata, path, body_lines)
@@ -21,6 +19,7 @@ local function build_event(metadata, path, body_lines)
     updated_at = metadata.updated_at,
     start_time = metadata.start_time,
     end_time = metadata.end_time,
+    length = metadata.length,
     recurring = metadata.recurring,
     path = path,
     body_lines = body_lines,
@@ -37,6 +36,7 @@ end
 
 function M.from_lines(lines, path)
   local metadata, _, body_lines = frontmatter.parse(lines)
+  metadata = frontmatter.flatten(metadata)
   if metadata.type ~= "event" then
     return nil, "not an event: " .. (path or "unknown")
   end
@@ -51,6 +51,7 @@ end
 
 function M.create(title, dir, overrides)
   overrides = overrides or {}
+  local cfg = config.get()
 
   local event_id = id.generate()
   local now = now_iso()
@@ -61,8 +62,9 @@ function M.create(title, dir, overrides)
     title = title,
     created_at = now,
     updated_at = now,
-    start_time = overrides.start_time or today_iso(),
-    end_time = overrides.end_time or today_iso(),
+    start_time = overrides.start_time or datetime.default_start(cfg.timezone),
+    end_time = overrides.end_time or datetime.default_end(cfg.timezone),
+    length = overrides.length,
     recurring = overrides.recurring,
   }
 
@@ -84,6 +86,7 @@ function M.update(event, changes)
   end
 
   local metadata, _, _ = frontmatter.parse(lines)
+  metadata = frontmatter.flatten(metadata)
 
   for key, value in pairs(changes) do
     metadata[key] = value

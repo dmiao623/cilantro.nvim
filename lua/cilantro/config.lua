@@ -5,7 +5,12 @@ M.defaults = {
   status_order = { "todo", "in_progress", "done", "cancelled" },
   default_status = "todo",
   peek_height = 15,
-  list_columns = { "status", "title", "end_time", "estimated_minutes" },
+  -- Timezone offset appended to default start/end times (ISO-8601 offset,
+  -- e.g. "-04:00" for UTC-4, "+00:00" or "Z" for UTC).
+  timezone = "-04:00",
+  -- Show a confirmation prompt before deleting a task or event.
+  confirm_delete = true,
+  list_columns = { "status", "title", "end_time" },
   calendar = {
     enabled = true,
     width = 28,
@@ -13,6 +18,9 @@ M.defaults = {
   layout = {
     -- Width ratio of the three panels: file tree : events : tasks
     ratio = { 1, 2, 2 },
+    -- Command used for the file tree panel. "netrw" runs :Explore; any other
+    -- value is run as an Ex command (e.g. "Oil" runs :Oil).
+    file_tree = "netrw",
   },
   keymaps = {
     open = "<CR>",
@@ -20,11 +28,11 @@ M.defaults = {
     cycle_status_back = "X",
     create = "a",
     create_event = "A",
+    delete = "dd",
     filter = "f",
     sort = "s",
     sort_direction = "S",
     sort_end_date = "se",
-    sort_minutes = "sm",
     sort_alpha = "sa",
     toggle_done = "td",
     toggle_paths = "tp",

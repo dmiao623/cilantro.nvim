@@ -78,13 +78,13 @@ In the task list buffer:
   <CR>      Open task in peek split (lower horizontal split)
   x         Cycle status forward (todo -> in_progress -> done -> cancelled)
   X         Cycle status backward
-  a         Create a new task (prompts for path/to/title)
+  a         Create a new task (the task list is the tasks buffer)
   A         Create a new event (prompts for path/to/title)
+  dd        Delete the task under the cursor
   f         Filter by status
   s         Change sort field
   S         Toggle sort direction (ascending/descending)
   se        Sort by end time
-  sm        Sort by estimated minutes
   sa        Sort alphabetically by title
   td        Toggle showing completed (done) tasks
   tp        Toggle showing file paths
@@ -96,8 +96,9 @@ In the task list buffer:
 In the calendar buffer:
 
   <CR>      Open event in peek split
-  a         Create a new task
+  a         Create a new event (the calendar is the events buffer)
   A         Create a new event
+  dd        Delete the event under the cursor
   tc        Toggle the calendar column
   R         Refresh index and re-render
   <C-f>     Open event in focus mode
@@ -127,8 +128,15 @@ Configuration is passed to `require("cilantro").setup()`:
     -- Height of the peek split (in lines)
     peek_height = 15,
 
+    -- Timezone offset appended to default start/end times.
+    -- ISO-8601 offset: "-04:00" is UTC-4, "+00:00" or "Z" is UTC.
+    timezone = "-04:00",
+
+    -- Show a confirmation prompt before deleting a task or event.
+    confirm_delete = true,
+
     -- Columns shown in the task list
-    list_columns = { "status", "title", "end_time", "estimated_minutes" },
+    list_columns = { "status", "title", "end_time" },
 
     -- Calendar column settings
     calendar = {
@@ -136,9 +144,13 @@ Configuration is passed to `require("cilantro").setup()`:
       width = 28,      -- width of the calendar column (in columns)
     },
 
-    -- Panel width ratio: file tree : events : tasks
+    -- Panel layout settings
     layout = {
+      -- Width ratio: file tree : events : tasks
       ratio = { 1, 2, 2 },
+      -- File tree command: "netrw" runs :Explore; any other value is run
+      -- as an Ex command (e.g. "Oil" runs :Oil).
+      file_tree = "netrw",
     },
 
     -- Keymap overrides (set to false to disable)
@@ -148,11 +160,11 @@ Configuration is passed to `require("cilantro").setup()`:
       cycle_status_back = "X",
       create = "a",
       create_event = "A",
+      delete = "dd",
       filter = "f",
       sort = "s",
       sort_direction = "S",
       sort_end_date = "se",
-      sort_minutes = "sm",
       sort_alpha = "sa",
       toggle_done = "td",
       toggle_paths = "tp",
@@ -173,15 +185,33 @@ Each task is a Markdown file with YAML frontmatter:
   type: task
   id: 01HT...
   title: Draft billing migration plan
-  status: in_progress
   created_at: 2026-04-05T10:42:00Z
   updated_at: 2026-04-05T11:10:00Z
   start_time: 2026-04-05
   end_time: 2026-04-12
-  estimated_minutes: 90
+  task-data:
+    status: in_progress
+    completed_at:
+    subtasks:
+  event-data:
+    length:
+    recurring:
   ---
   Notes for this task go here.
 <
+
+Frontmatter is split into two parts. Shared fields sit at the top level
+(`type`, `id`, `title`, `created_at`, `updated_at`, `start_time`,
+`end_time`). Type-specific fields are nested under two blocks,
+`task-data:` and `event-data:`.
+
+Both blocks are always written, so every file has the same structure
+regardless of its `type`. Only the block matching the file's `type` is
+read; the other is ignored, but kept so the file can be converted by
+changing `type`.
+
+Task-specific fields, nested under `task-data:`, are `status`,
+`completed_at`, and `subtasks`.
 
 The `type` field defaults to `task` when absent. Filenames are the
 slugified title with a `.md` extension. When the title is changed in the
@@ -191,8 +221,11 @@ match and any open Oil.nvim buffers are refreshed.
 The `updated_at` field is automatically set to the current time whenever
 the file is saved.
 
-The `start_time` field defaults to the creation date when a new task is
-created.
+When a new task or event is created, `start_time` and `end_time` both
+default to the current date: `start_time` at `00:00` and `end_time` at
+`23:59`, each with the configured timezone offset (see `timezone` in
+|cilantro-configuration|, default `-04:00`). For example:
+`2026-04-05T00:00-04:00`.
 
 Status values: `todo`, `in_progress`, `done`, `cancelled`.
 
@@ -200,13 +233,15 @@ When sorting by end time (the default), tasks are grouped under date
 headers. Tasks without an end time are sorted last.
 
 The `start_time` and `end_time` fields accept either a date
-(`2026-04-05`) or a date with a time (`2026-04-05T14:00`). A date-only
-value is interpreted as `00:00` for `start_time` and `23:59` for
-`end_time`.
+(`2026-04-05`) or a date with a time (`2026-04-05T14:00`), optionally
+followed by a timezone offset (`2026-04-05T14:00-04:00` or a trailing
+`Z`). A date-only value is interpreted as `00:00` for `start_time` and
+`23:59` for `end_time`.
 
-Note: earlier versions used `start_date` / `end_date`. Files using the
-old names are still read correctly and are rewritten with the new names
-the next time they are saved.
+Note: earlier versions used `start_date` / `end_date`, and stored all
+fields flat at the top level (no `task-data:` / `event-data:` block).
+Such files are still read correctly and are rewritten in the current
+format the next time they are saved.
 
 ==============================================================================
 EVENT FORMAT                                          *cilantro-event-format*
@@ -221,15 +256,27 @@ An event is a Markdown file with `type: event` in its frontmatter:
   updated_at: 2026-04-05T11:10:00Z
   start_time: 2026-04-06T09:00
   end_time: 2026-04-06T09:15
-  recurring: weekly
+  task-data:
+    status:
+    completed_at:
+    subtasks:
+  event-data:
+    length: 15m
+    recurring: weekly
   ---
   Notes for this event go here.
 <
 
-Events share the YAML structure of tasks but omit `status`,
-`estimated_minutes`, `completed_at`, and `subtasks`. They may carry a
-`recurring` field with one of: `daily`, `weekdays`, `weekly`, `monthly`,
-`yearly`.
+Events share the top-level fields with tasks (see |cilantro-task-format|)
+and the same two-block structure. For an event the `task-data:` block is
+present but unused; the event-specific fields live under `event-data:`.
+
+Event-specific fields, nested under `event-data:`:
+
+  length      Optional string describing how long the event lasts
+              (free-form, for example `15m` or `1h`).
+  recurring   Optional string, one of: `daily`, `weekdays`, `weekly`,
+              `monthly`, `yearly`.
 
 `start_time` and `end_time` follow the same date / date-time rules as
 tasks (see |cilantro-task-format|).
@@ -241,17 +288,19 @@ Events are created with |:CilantroCreateEvent| and stored in the same
 CALENDAR                                                  *cilantro-calendar*
 
 When the calendar is enabled (the default), |:Cilantro| opens a
-three-panel layout: a file tree on the left (an oil.nvim buffer rooted
-at `task_dir`), the calendar of events in the middle, and the task list
-on the right. Events appear in the calendar column; tasks appear in the
-list column.
+three-panel layout: a file tree on the left rooted at `task_dir`, the
+calendar of events in the middle, and the task list on the right.
+Events appear in the calendar column; tasks appear in the list column.
 
 The relative widths of the three panels are set by `layout.ratio`
 (default `{ 1, 2, 2 }` — file tree : events : tasks). See
 |cilantro-configuration|.
 
-The file tree panel requires oil.nvim. If oil.nvim is not installed the
-panel is skipped and only the calendar and task columns are shown.
+The file tree panel is opened by `layout.file_tree`. The default,
+`"netrw"`, runs `:Explore` on `task_dir`. Any other value is run as an
+Ex command — for example `file_tree = "Oil"` runs `:Oil` (oil.nvim). If
+the command fails (for example the plugin is not installed) the panel
+is skipped and only the calendar and task columns are shown.
 
 Closing any panel (for example pressing `q`) closes all three together.
 
@@ -280,7 +329,6 @@ can be overridden in your colorscheme:
   CilantroTitle               Linked to |hl-Normal|
   CilantroTitleDone           Linked to |hl-DiagnosticOk|
   CilantroDate                Linked to |hl-Number|
-  CilantroMinutes             Linked to |hl-Special|
   CilantroHeader              Linked to |hl-Comment|
   CilantroEmpty               Linked to |hl-Comment|
   CilantroEventTime           Linked to |hl-Number|

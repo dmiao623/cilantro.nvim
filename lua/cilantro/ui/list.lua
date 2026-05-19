@@ -72,19 +72,16 @@ function M.render_task_line(t, opts)
   opts = opts or {}
   local icon = STATUS_ICONS[t.status] or "[?]"
   local name = task_display_name(t)
-  local minutes = t.estimated_minutes and (t.estimated_minutes .. "m") or "-"
 
   local title_col = pad_right(name, 50)
-  local min_col = pad_right(minutes, 6)
 
   if opts.show_date == false then
-    return "  " .. icon .. " " .. title_col .. " " .. min_col
+    return "  " .. icon .. " " .. title_col
   end
 
   local date = datetime.date_of(t.end_time) or ""
-  local date_col = pad_right(date, 12)
 
-  return "  " .. icon .. " " .. title_col .. " " .. date_col .. " " .. min_col
+  return "  " .. icon .. " " .. title_col .. " " .. date
 end
 
 function M.task_line_highlights(t, line_idx, opts)
@@ -94,7 +91,6 @@ function M.task_line_highlights(t, line_idx, opts)
 
   local status_hl = STATUS_HL[t.status] or "CilantroStatusTodo"
   local title_hl = t.status == "done" and "CilantroTitleDone" or "CilantroTitle"
-  local min_hl = t.status == "done" and "CilantroTitleDone" or "CilantroMinutes"
 
   local icon_start = 2
   local icon_end = icon_start + #icon
@@ -106,17 +102,10 @@ function M.task_line_highlights(t, line_idx, opts)
     { line_idx, title_hl, title_start, title_end },
   }
 
-  if opts.show_date == false then
-    local min_start = title_end + 1
-    table.insert(hls, { line_idx, min_hl, min_start, -1 })
-  else
-    local date_col_width = 12
+  if opts.show_date ~= false then
     local date_hl = t.status == "done" and "CilantroTitleDone" or "CilantroDate"
     local date_start = title_end + 1
-    local date_end = date_start + date_col_width
-    local min_start = date_end + 1
-    table.insert(hls, { line_idx, date_hl, date_start, date_end })
-    table.insert(hls, { line_idx, min_hl, min_start, -1 })
+    table.insert(hls, { line_idx, date_hl, date_start, -1 })
   end
 
   return hls
@@ -404,7 +393,7 @@ function M.set_filter()
 end
 
 function M.set_sort()
-  local fields = { "end_time", "created_at", "updated_at", "title", "status", "estimated_minutes", "start_time" }
+  local fields = { "end_time", "created_at", "updated_at", "title", "status", "start_time" }
   vim.ui.select(fields, { prompt = "Sort by:" }, function(choice)
     if not choice then
       return
@@ -441,11 +430,6 @@ function M.sort_by_end_date()
       end
     end
   end
-  M.render()
-end
-
-function M.sort_by_minutes()
-  M.query_opts.sort_by = "estimated_minutes"
   M.render()
 end
 
@@ -517,6 +501,13 @@ function M.setup_keymaps(bufnr)
     require("cilantro").create_event()
   end, "Create new event")
 
+  map(km.delete, function()
+    local t = M.get_cursor_task()
+    if t then
+      require("cilantro").delete(t)
+    end
+  end, "Delete task")
+
   map(km.filter, function()
     M.set_filter()
   end, "Set filter")
@@ -532,10 +523,6 @@ function M.setup_keymaps(bufnr)
   map(km.sort_end_date, function()
     M.sort_by_end_date()
   end, "Sort by end date")
-
-  map(km.sort_minutes, function()
-    M.sort_by_minutes()
-  end, "Sort by estimated minutes")
 
   map(km.sort_alpha, function()
     M.sort_by_alpha()

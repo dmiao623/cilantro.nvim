@@ -52,6 +52,16 @@ function M.end_of(value)
   return parsed.date .. "T" .. (parsed.time or "23:59")
 end
 
+-- Today's date with a default start time (00:00) and the given timezone.
+function M.default_start(tz)
+  return os.date("%Y-%m-%d") .. "T00:00" .. (tz or "")
+end
+
+-- Today's date with a default end time (23:59) and the given timezone.
+function M.default_end(tz)
+  return os.date("%Y-%m-%d") .. "T23:59" .. (tz or "")
+end
+
 function M.compare(a, b)
   local na = M.start_of(a) or "9999-99-99T99:99"
   local nb = M.start_of(b) or "9999-99-99T99:99"

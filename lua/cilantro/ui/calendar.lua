@@ -281,29 +281,40 @@ function M.render_pair()
   M.event_ids = event_ids
 end
 
--- Open an oil.nvim file tree rooted at task_dir, split left of `right_of_win`.
--- Returns the tree window, or nil when oil.nvim is not installed.
+-- Open the file tree panel rooted at task_dir, split left of `right_of_win`.
+-- The command is taken from cfg.layout.file_tree: "netrw" runs :Explore, any
+-- other value is run as an Ex command (e.g. "Oil" runs :Oil).
+-- Returns the tree window, or nil when the tree command failed.
 function M.open_tree(right_of_win)
-  local has_oil, oil = pcall(require, "oil")
-  if not has_oil then
-    vim.notify("cilantro: oil.nvim not installed; file tree panel skipped", vim.log.levels.WARN)
-    return nil
-  end
-
   local cfg = config.get()
+  local tree = (cfg.layout and cfg.layout.file_tree) or "netrw"
+
   vim.api.nvim_set_current_win(right_of_win)
   vim.cmd("leftabove vsplit")
   local tree_win = vim.api.nvim_get_current_win()
-  pcall(oil.open, cfg.task_dir)
+
+  local ex = (tree == "netrw") and "Explore" or tree
+  local cmd = ex .. " " .. vim.fn.fnameescape(cfg.task_dir)
+  local ok, err = pcall(vim.cmd, cmd)
+  if not ok then
+    vim.notify(
+      "cilantro: file tree command failed (:" .. cmd .. "): " .. tostring(err),
+      vim.log.levels.WARN
+    )
+    pcall(vim.api.nvim_win_close, tree_win, true)
+    M.tree_win = nil
+    return nil
+  end
+
   M.tree_win = tree_win
 
   -- Make the close keymap work from the file tree panel too.
   local km = cfg.keymaps
   if km.close and km.close ~= false then
-    local oil_buf = vim.api.nvim_win_get_buf(tree_win)
+    local tree_buf = vim.api.nvim_win_get_buf(tree_win)
     vim.keymap.set("n", km.close, function()
       require("cilantro").close()
-    end, { buffer = oil_buf, nowait = true, desc = "Close cilantro" })
+    end, { buffer = tree_buf, nowait = true, desc = "Close cilantro" })
   end
 
   return tree_win
@@ -440,8 +451,15 @@ function M.setup_keymaps(bufnr)
   end, "Create new event")
 
   map(km.create, function()
-    require("cilantro").create_task()
-  end, "Create new task")
+    require("cilantro").create_event()
+  end, "Create new event")
+
+  map(km.delete, function()
+    local e = M.get_cursor_event()
+    if e then
+      require("cilantro").delete(e)
+    end
+  end, "Delete event")
 
   map(km.refresh, function()
     require("cilantro").refresh()

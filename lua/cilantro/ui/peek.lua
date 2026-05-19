@@ -11,6 +11,16 @@ local function win_is_valid(win)
   return win and vim.api.nvim_win_is_valid(win)
 end
 
+-- A peek/focus window is split off a scroll-bound window and inherits its
+-- scrollbind/cursorbind. Clear them so editing a task file does not scroll
+-- the calendar and list panels.
+local function clear_scroll_bind(win)
+  if win_is_valid(win) then
+    pcall(vim.api.nvim_set_option_value, "scrollbind", false, { win = win })
+    pcall(vim.api.nvim_set_option_value, "cursorbind", false, { win = win })
+  end
+end
+
 function M.open(task, opts)
   opts = opts or {}
   local cfg = config.get()
@@ -41,6 +51,7 @@ function M.open(task, opts)
 
     M.buf = vim.api.nvim_get_current_buf()
     M.focused = true
+    clear_scroll_bind(M.win)
     M.setup_peek_keymaps()
     return
   end
@@ -62,6 +73,7 @@ function M.open(task, opts)
 
   M.buf = vim.api.nvim_get_current_buf()
   M.focused = false
+  clear_scroll_bind(M.win)
   M.setup_peek_keymaps()
 end
 

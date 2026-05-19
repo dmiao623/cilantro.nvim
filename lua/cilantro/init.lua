@@ -292,6 +292,43 @@ function M.create_event(input)
   end
 end
 
+function M.delete(item)
+  if not item or not item.path then
+    return
+  end
+
+  local cfg = require("cilantro.config").get()
+  local index = require("cilantro.index")
+  local list = require("cilantro.ui.list")
+  local peek = require("cilantro.ui.peek")
+
+  local kind = item.type == "event" and "event" or "task"
+  local label = item.title or item.path
+
+  if cfg.confirm_delete then
+    local answer = vim.fn.confirm('Delete ' .. kind .. ' "' .. label .. '"?', "&Yes\n&No", 2)
+    if answer ~= 1 then
+      return
+    end
+  end
+
+  -- Close the peek window if it is showing the file being deleted.
+  if peek.is_open() and peek.buf and vim.api.nvim_buf_is_valid(peek.buf) then
+    if vim.api.nvim_buf_get_name(peek.buf) == item.path then
+      peek.close()
+    end
+  end
+
+  vim.fn.delete(item.path)
+  index.remove(item.path)
+
+  if list.is_visible() then
+    list.render()
+  end
+
+  refresh_oil()
+end
+
 function M.refresh()
   local cfg = require("cilantro.config").get()
   local index = require("cilantro.index")

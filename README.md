@@ -11,7 +11,7 @@ Tasks and events are stored as individual Markdown files with YAML frontmatter. 
 - Three-panel layout: file tree, events, and tasks
 - Queryable task list UI
 - Calendar column with synchronized scrolling
-- Simple task creation and status updates
+- Simple task creation, deletion, and status updates
 - Sort and filter support
 - Customizable keymaps
 
