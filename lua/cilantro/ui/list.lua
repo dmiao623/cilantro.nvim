@@ -1,6 +1,5 @@
 local config = require("cilantro.config")
 local index = require("cilantro.index")
-local datetime = require("cilantro.datetime")
 
 local M = {}
 
@@ -79,7 +78,7 @@ function M.render_task_line(t, opts)
     return "  " .. icon .. " " .. title_col
   end
 
-  local date = datetime.date_of(t.end_time) or ""
+  local date = t.end_date or ""
 
   return "  " .. icon .. " " .. title_col .. " " .. date
 end
@@ -211,7 +210,7 @@ function M.render_solo()
   if show_headers then
     local current_date = nil
     for _, t in ipairs(tasks) do
-      local task_date = datetime.date_of(t.end_time) or "No end date"
+      local task_date = t.end_date or "No end date"
       if task_date ~= current_date then
         if current_date ~= nil then
           table.insert(lines, "")

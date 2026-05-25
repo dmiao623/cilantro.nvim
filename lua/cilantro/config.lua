@@ -22,6 +22,16 @@ M.defaults = {
     -- value is run as an Ex command (e.g. "Oil" runs :Oil).
     file_tree = "netrw",
   },
+  -- Default values for non-metadata fields when creating new entries.
+  -- Supports template strings: {{today}}, {{now}}, {{timezone}}
+  defaults = {
+    start_date = "{{today}}",
+    start_time = "00:00",
+    start_tz = "{{timezone}}",
+    end_date = "{{today}}",
+    end_time = "23:59",
+    end_tz = "{{timezone}}",
+  },
   keymaps = {
     open = "<CR>",
     cycle_status = "x",
@@ -61,6 +71,34 @@ local function deep_merge(base, override)
     end
   end
   return result
+end
+
+-- Resolve template placeholders in a string value.
+function M.resolve_template(value, cfg)
+  if type(value) ~= "string" then
+    return value
+  end
+  cfg = cfg or M.get()
+  local replacements = {
+    ["{{today}}"] = os.date("%Y-%m-%d"),
+    ["{{now}}"] = os.date("%H:%M"),
+    ["{{timezone}}"] = cfg.timezone or "",
+  }
+  for pattern, replacement in pairs(replacements) do
+    value = value:gsub(vim.pesc(pattern), replacement)
+  end
+  return value
+end
+
+-- Resolve all template strings in the defaults config section.
+function M.resolve_defaults(cfg)
+  cfg = cfg or M.get()
+  local resolved = {}
+  local defs = cfg.defaults or {}
+  for k, v in pairs(defs) do
+    resolved[k] = M.resolve_template(v, cfg)
+  end
+  return resolved
 end
 
 function M.setup(opts)

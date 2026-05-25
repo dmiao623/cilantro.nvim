@@ -3,21 +3,37 @@ local M = {}
 -- Shared top-level fields, in serialization order.
 local SHARED_ORDER = {
   "type",
-  "id",
   "title",
-  "created_at",
-  "updated_at",
+  -- blank line inserted after title
+  "start_date",
   "start_time",
+  "start_tz",
+  -- blank line inserted after start_tz
+  "end_date",
   "end_time",
+  "end_tz",
 }
 
 -- Fields nested under `task-data:`, in serialization order.
 local TASK_DATA_ORDER = { "status", "completed_at", "subtasks" }
 
--- Fields nested under `event-data:`, in serialization order.
-local EVENT_DATA_ORDER = { "recurring" }
+-- Fields nested under `event-data: > repeat:`, in serialization order.
+local REPEAT_ORDER = { "enable", "period", "repeats" }
+
+-- The only child of `event-data:` is the `repeat` block.
+local EVENT_DATA_ORDER = { "repeat" }
+
+-- Fields nested under `metadata:`, in serialization order.
+local METADATA_ORDER = { "id", "created_at", "updated_at" }
 
 local MAP_ITEM_KEY_ORDER = { "name", "status" }
+
+-- Groups of shared keys separated by blank lines in the output.
+local SHARED_GROUPS = {
+  { "type", "title" },
+  { "start_date", "start_time", "start_tz" },
+  { "end_date", "end_time", "end_tz" },
+}
 
 --------------------------------------------------------------------------
 -- Parsing
@@ -29,6 +45,22 @@ end
 
 local function is_blank(line)
   return line:match("^%s*$") ~= nil
+end
+
+-- Try to parse an inline YAML list like "[mon, wed, fri]".
+local function try_parse_inline_list(value)
+  local inner = value:match("^%[(.*)%]$")
+  if not inner then
+    return nil
+  end
+  local items = {}
+  for item in inner:gmatch("[^,]+") do
+    table.insert(items, vim.trim(item))
+  end
+  if #items == 0 then
+    return nil
+  end
+  return items
 end
 
 local parse_map, parse_list
@@ -95,7 +127,13 @@ parse_map = function(lines, i, stop, indent)
       else
         value = vim.trim(value)
         if value ~= "" then
-          map[key] = value
+          -- Try inline list syntax: [a, b, c]
+          local inline = try_parse_inline_list(value)
+          if inline then
+            map[key] = inline
+          else
+            map[key] = value
+          end
           i = i + 1
         else
           -- empty value: a child block may follow at a deeper indent
@@ -106,8 +144,8 @@ parse_map = function(lines, i, stop, indent)
           if j <= stop and indent_of(lines[j]) > indent then
             local child_indent = indent_of(lines[j])
             if lines[j]:match("^%s*-%s") then
-              local list, ni = parse_list(lines, j, stop, child_indent)
-              map[key] = list
+              local list_val, ni = parse_list(lines, j, stop, child_indent)
+              map[key] = list_val
               i = ni
             else
               local submap, ni = parse_map(lines, j, stop, child_indent)
@@ -122,6 +160,30 @@ parse_map = function(lines, i, stop, indent)
     end
   end
   return map, i
+end
+
+-- Split a combined datetime string into (date, time, tz) components.
+-- "2026-04-05T09:00-04:00" -> "2026-04-05", "09:00", "-04:00"
+-- "2026-04-05T09:00Z"      -> "2026-04-05", "09:00", "Z"
+-- "2026-04-05T09:00"       -> "2026-04-05", "09:00", nil
+-- "2026-04-05"             -> "2026-04-05", nil, nil
+local function split_datetime(value)
+  if type(value) ~= "string" then
+    return nil, nil, nil
+  end
+  local d, t, tz = value:match("^(%d%d%d%d%-%d%d%-%d%d)[T ](%d%d:%d%d)(.+)$")
+  if d then
+    return d, t, tz
+  end
+  d, t = value:match("^(%d%d%d%d%-%d%d%-%d%d)[T ](%d%d:%d%d)$")
+  if d then
+    return d, t, nil
+  end
+  d = value:match("^(%d%d%d%d%-%d%d%-%d%d)$")
+  if d then
+    return d, nil, nil
+  end
+  return nil, nil, nil
 end
 
 function M.parse(lines)
@@ -147,14 +209,53 @@ function M.parse(lines)
 
   local metadata = parse_map(lines, 2, frontmatter_end - 1, 0)
 
-  -- Back-compat: earlier versions used start_date / end_date.
+  ---------------------------------------------------------------------------
+  -- Back-compat: migrate old formats
+  ---------------------------------------------------------------------------
+
+  -- Old format used combined start_time / end_time with embedded date+tz.
+  -- Also handle even older start_date / end_date aliases.
   if metadata.start_date and not metadata.start_time then
-    metadata.start_time = metadata.start_date
-    metadata.start_date = nil
+    -- Very old alias: start_date was the combined field
+    local d, t, tz = split_datetime(metadata.start_date)
+    if d and t then
+      metadata.start_date = d
+      metadata.start_time = t
+      metadata.start_tz = tz
+    end
+  elseif metadata.start_time and metadata.start_time:match("^%d%d%d%d%-") then
+    -- Old combined start_time containing a full date
+    local d, t, tz = split_datetime(metadata.start_time)
+    if d then
+      metadata.start_date = d
+      metadata.start_time = t
+      metadata.start_tz = tz
+    end
   end
+
   if metadata.end_date and not metadata.end_time then
-    metadata.end_time = metadata.end_date
-    metadata.end_date = nil
+    local d, t, tz = split_datetime(metadata.end_date)
+    if d and t then
+      metadata.end_date = d
+      metadata.end_time = t
+      metadata.end_tz = tz
+    end
+  elseif metadata.end_time and metadata.end_time:match("^%d%d%d%d%-") then
+    local d, t, tz = split_datetime(metadata.end_time)
+    if d then
+      metadata.end_date = d
+      metadata.end_time = t
+      metadata.end_tz = tz
+    end
+  end
+
+  -- Old event-data had a flat `recurring` string; convert to repeat block.
+  if type(metadata["event-data"]) == "table" then
+    local ed = metadata["event-data"]
+    if ed.recurring and not ed["repeat"] then
+      ed["repeat"] = { enable = "true", period = ed.recurring, repeats = "" }
+      ed.recurring = nil
+    end
   end
 
   local body_lines = {}
@@ -165,16 +266,17 @@ function M.parse(lines)
   return metadata, frontmatter_end, body_lines
 end
 
--- Lift `task-data:` / `event-data:` contents to the top level, producing a
--- flat metadata table. Old (already-flat) files pass through unchanged.
+-- Lift `task-data:` / `event-data:` / `metadata:` contents to the top level,
+-- producing a flat metadata table. Old (already-flat) files pass through
+-- unchanged. The `repeat` key stays as a table if present.
 function M.flatten(metadata)
   local flat = {}
   for k, v in pairs(metadata) do
-    if k ~= "task-data" and k ~= "event-data" then
+    if k ~= "task-data" and k ~= "event-data" and k ~= "metadata" then
       flat[k] = v
     end
   end
-  for _, container in ipairs({ "task-data", "event-data" }) do
+  for _, container in ipairs({ "task-data", "event-data", "metadata" }) do
     local sub = metadata[container]
     if type(sub) == "table" then
       for k, v in pairs(sub) do
@@ -191,12 +293,29 @@ end
 -- Serialization
 --------------------------------------------------------------------------
 
-local function emit_scalar(out, indent, key, value)
-  table.insert(out, indent .. key .. ": " .. tostring(value))
+-- Compute the column width (max key length) for a set of keys.
+local function col_width(keys)
+  local max_len = 0
+  for _, k in ipairs(keys) do
+    if #k > max_len then
+      max_len = #k
+    end
+  end
+  return max_len
 end
 
-local function emit_list(out, indent, key, list)
-  table.insert(out, indent .. key .. ":")
+local function emit_aligned(out, indent, key, value, width)
+  local padding = string.rep(" ", width - #key)
+  table.insert(out, indent .. key .. ":" .. padding .. " " .. tostring(value))
+end
+
+local function emit_empty(out, indent, key, width)
+  table.insert(out, indent .. key .. ":" .. string.rep(" ", width - #key))
+end
+
+local function emit_list(out, indent, key, list, width)
+  table.insert(out, indent .. key .. ":" .. string.rep(" ", width - #key))
+  local item_width = col_width(MAP_ITEM_KEY_ORDER)
   for _, item in ipairs(list) do
     if type(item) == "table" then
       local first = true
@@ -223,6 +342,11 @@ local function emit_list(out, indent, key, list)
   end
 end
 
+-- Serialize an inline list like [mon, wed, fri].
+local function serialize_inline_list(list)
+  return "[" .. table.concat(list, ", ") .. "]"
+end
+
 -- Does `value` warrant a line? Empty tables / lists are skipped.
 local function has_value(value)
   if value == nil then
@@ -239,6 +363,7 @@ function M.serialize(metadata)
   local m = M.flatten(metadata)
   local out = { "---" }
 
+  -- Track all known keys so we can emit unknown extras.
   local known = {}
   for _, k in ipairs(SHARED_ORDER) do
     known[k] = true
@@ -246,43 +371,80 @@ function M.serialize(metadata)
   for _, k in ipairs(TASK_DATA_ORDER) do
     known[k] = true
   end
-  for _, k in ipairs(EVENT_DATA_ORDER) do
+  for _, k in ipairs(METADATA_ORDER) do
     known[k] = true
   end
+  known["repeat"] = true
 
-  -- Shared top-level fields.
-  for _, key in ipairs(SHARED_ORDER) do
-    if has_value(m[key]) then
-      emit_scalar(out, "", key, m[key])
+  -- Shared top-level fields, grouped with blank-line separators.
+  local shared_width = col_width(SHARED_ORDER)
+  for gi, group in ipairs(SHARED_GROUPS) do
+    if gi > 1 then
+      table.insert(out, "")
+    end
+    for _, key in ipairs(group) do
+      if has_value(m[key]) then
+        emit_aligned(out, "", key, m[key], shared_width)
+      else
+        emit_empty(out, "", key, shared_width)
+      end
     end
   end
 
   -- Preserve any unrecognised top-level scalar fields.
   for key, value in pairs(m) do
     if not known[key] and type(value) ~= "table" then
-      emit_scalar(out, "", key, value)
+      table.insert(out, "")
+      emit_aligned(out, "", key, value, #key)
     end
   end
 
-  -- Type-specific blocks. Both are always written so a file's structure is
-  -- identical regardless of `type`; only the block matching `type` is read.
+  -- task-data block
+  table.insert(out, "")
+  local td_width = col_width(TASK_DATA_ORDER)
   table.insert(out, "task-data:")
   for _, key in ipairs(TASK_DATA_ORDER) do
     if key == "subtasks" and type(m[key]) == "table" and #m[key] > 0 then
-      emit_list(out, "  ", "subtasks", m[key])
+      emit_list(out, "  ", "subtasks", m[key], td_width)
     elseif key ~= "subtasks" and m[key] ~= nil and m[key] ~= "" then
-      emit_scalar(out, "  ", key, m[key])
+      emit_aligned(out, "  ", key, m[key], td_width)
     else
-      table.insert(out, "  " .. key .. ":")
+      emit_empty(out, "  ", key, td_width)
     end
   end
 
+  -- event-data block with nested repeat
+  table.insert(out, "")
   table.insert(out, "event-data:")
-  for _, key in ipairs(EVENT_DATA_ORDER) do
-    if m[key] ~= nil and m[key] ~= "" then
-      emit_scalar(out, "  ", key, m[key])
+  local rep = m["repeat"]
+  local rep_width = col_width(REPEAT_ORDER)
+  table.insert(out, "  repeat:")
+  if type(rep) == "table" then
+    for _, key in ipairs(REPEAT_ORDER) do
+      local v = rep[key]
+      if type(v) == "table" then
+        emit_aligned(out, "    ", key, serialize_inline_list(v), rep_width)
+      elseif has_value(v) then
+        emit_aligned(out, "    ", key, v, rep_width)
+      else
+        emit_empty(out, "    ", key, rep_width)
+      end
+    end
+  else
+    for _, key in ipairs(REPEAT_ORDER) do
+      emit_empty(out, "    ", key, rep_width)
+    end
+  end
+
+  -- metadata block
+  table.insert(out, "")
+  local meta_width = col_width(METADATA_ORDER)
+  table.insert(out, "metadata:")
+  for _, key in ipairs(METADATA_ORDER) do
+    if has_value(m[key]) then
+      emit_aligned(out, "  ", key, m[key], meta_width)
     else
-      table.insert(out, "  " .. key .. ":")
+      emit_empty(out, "  ", key, meta_width)
     end
   end
 

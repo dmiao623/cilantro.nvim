@@ -70,12 +70,12 @@ function M.get_cursor_event()
 end
 
 local function render_event_line(e, width)
-  local start_t = datetime.format_time(e.start_time)
-  local end_t = datetime.format_time(e.end_time)
+  local start_t = e.start_time
+  local end_t = e.end_time
   local prefix
-  if start_t and end_t then
+  if start_t and start_t ~= "" and end_t and end_t ~= "" then
     prefix = "  " .. start_t .. " - " .. end_t .. "  "
-  elseif start_t then
+  elseif start_t and start_t ~= "" then
     prefix = "  " .. start_t .. "  "
   else
     prefix = "        "
@@ -90,21 +90,23 @@ local function render_event_line(e, width)
     end
   end
   local line = prefix .. title
-  if e.recurring then
-    line = line .. " \xe2\x86\xbb " .. e.recurring
+  local rep = e["repeat"]
+  if rep and (rep.enable == "true" or rep.enable == true) and rep.period then
+    local period_str = type(rep.period) == "table" and table.concat(rep.period, ",") or tostring(rep.period)
+    line = line .. " \xe2\x86\xbb " .. period_str
   end
   return pad_right(line, width)
 end
 
 local function event_line_highlights(e, line_idx)
-  local start_t = datetime.format_time(e.start_time)
-  local end_t = datetime.format_time(e.end_time)
+  local start_t = e.start_time
+  local end_t = e.end_time
   local hls = {}
-  if start_t and end_t then
+  if start_t and start_t ~= "" and end_t and end_t ~= "" then
     -- "  HH:MM - HH:MM  title" — time range is cols 2..16 (0-indexed bytes)
     table.insert(hls, { line_idx, "CilantroEventTime", 2, 16 })
     table.insert(hls, { line_idx, "CilantroTitle", 18, -1 })
-  elseif start_t then
+  elseif start_t and start_t ~= "" then
     table.insert(hls, { line_idx, "CilantroEventTime", 2, 7 })
     table.insert(hls, { line_idx, "CilantroTitle", 9, -1 })
   else
@@ -113,14 +115,21 @@ local function event_line_highlights(e, line_idx)
   return hls
 end
 
--- Group events by date. Multi-day events appear on each day they span:
--- the start day uses the original event object; subsequent days use a
--- shallow copy with a date-only start_time so no time prefix is shown.
+-- Group events by date. Multi-day and repeating events appear on each
+-- applicable date. The start day uses the original event object;
+-- subsequent days use a shallow copy.
 local function group_events_by_date(events)
   local groups = {}
   local order = {}
   for _, e in ipairs(events) do
-    local dates = datetime.enumerate_dates(e.start_time, e.end_time)
+    local dates
+    local rep = e["repeat"]
+    if rep and (rep.enable == "true" or rep.enable == true) and rep.period then
+      local repeats_num = rep.repeats and tonumber(rep.repeats) or nil
+      dates = datetime.enumerate_repeat_dates(e.start_date, e.end_date, rep.period, repeats_num)
+    else
+      dates = datetime.enumerate_dates(e.start_date, e.end_date)
+    end
     for i, d in ipairs(dates) do
       if not groups[d] then
         groups[d] = {}
@@ -129,9 +138,10 @@ local function group_events_by_date(events)
       if i == 1 then
         table.insert(groups[d], e)
       else
-        -- Continuation day: keep original times so each day shows the full range
         local occ = {}
-        for k, v in pairs(e) do occ[k] = v end
+        for k, v in pairs(e) do
+          occ[k] = v
+        end
         table.insert(groups[d], occ)
       end
     end
@@ -144,7 +154,7 @@ local function group_tasks_by_date(tasks)
   local groups = {}
   local order = {}
   for _, t in ipairs(tasks) do
-    local d = datetime.date_of(t.end_time) or "No end date"
+    local d = t.end_date or "No end date"
     if not groups[d] then
       groups[d] = {}
       table.insert(order, d)

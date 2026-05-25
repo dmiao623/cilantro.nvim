@@ -70,7 +70,8 @@ function M.setup(opts)
 
       local bufnr = ev.buf
       local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-      local metadata, fm_end, _ = fm.parse(lines)
+      local raw_metadata, fm_end, _ = fm.parse(lines)
+      local metadata = fm.flatten(raw_metadata)
 
       local is_event = metadata.type == "event"
       local model = is_event and event_mod or task_mod

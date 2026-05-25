@@ -13,8 +13,9 @@ CONTENTS                                                    *cilantro-contents*
   5. Configuration ........................ |cilantro-configuration|
   6. Task Format .......................... |cilantro-task-format|
   7. Event Format ......................... |cilantro-event-format|
-  8. Calendar ............................. |cilantro-calendar|
-  9. Highlights ........................... |cilantro-highlights|
+  8. Repeating Events ..................... |cilantro-repeating-events|
+  9. Calendar ............................. |cilantro-calendar|
+  10. Highlights .......................... |cilantro-highlights|
 
 ==============================================================================
 INTRODUCTION                                            *cilantro-introduction*
@@ -128,7 +129,7 @@ Configuration is passed to `require("cilantro").setup()`:
     -- Height of the peek split (in lines)
     peek_height = 15,
 
-    -- Timezone offset appended to default start/end times.
+    -- Timezone offset used by the {{timezone}} template.
     -- ISO-8601 offset: "-04:00" is UTC-4, "+00:00" or "Z" is UTC.
     timezone = "-04:00",
 
@@ -151,6 +152,17 @@ Configuration is passed to `require("cilantro").setup()`:
       -- File tree command: "netrw" runs :Explore; any other value is run
       -- as an Ex command (e.g. "Oil" runs :Oil).
       file_tree = "netrw",
+    },
+
+    -- Default values for non-metadata fields when creating entries.
+    -- Template strings: {{today}}, {{now}}, {{timezone}}
+    defaults = {
+      start_date = "{{today}}",
+      start_time = "00:00",
+      start_tz   = "{{timezone}}",
+      end_date   = "{{today}}",
+      end_time   = "23:59",
+      end_tz     = "{{timezone}}",
     },
 
     -- Keymap overrides (set to false to disable)
@@ -176,42 +188,72 @@ Configuration is passed to `require("cilantro").setup()`:
   })
 <
 
+The `defaults` table controls the initial values for new tasks and events.
+Each value is a string that may contain template placeholders:
+
+  {{today}}      Replaced with the current date (YYYY-MM-DD).
+  {{now}}        Replaced with the current time (HH:MM).
+  {{timezone}}   Replaced with the configured `timezone` value.
+
+For example, to have all new entries start at 09:00:
+>lua
+  defaults = { start_time = "09:00" }
+<
+
 ==============================================================================
 TASK FORMAT                                            *cilantro-task-format*
 
-Each task is a Markdown file with YAML frontmatter:
+Each task is a Markdown file with YAML frontmatter. Date, time, and
+timezone are stored as separate fields. Values are aligned within each
+block for readability:
 >markdown
   ---
-  type: task
-  id: 01HT...
-  title: Draft billing migration plan
-  created_at: 2026-04-05T10:42:00Z
-  updated_at: 2026-04-05T11:10:00Z
-  start_time: 2026-04-05
-  end_time: 2026-04-12
+  type:       task
+  title:      Draft billing migration plan
+
+  start_date: 2026-04-05
+  start_time: 00:00
+  start_tz:   -04:00
+
+  end_date:   2026-04-12
+  end_time:   23:59
+  end_tz:     -04:00
+
   task-data:
-    status: in_progress
+    status:       in_progress
     completed_at:
     subtasks:
+      - name: Review schema
+        status: done
+      - name: Write migration
+        status: todo
+
   event-data:
-    length:
-    recurring:
+    repeat:
+      enable:
+      period:
+      repeats:
+
+  metadata:
+    id:         01HT...
+    created_at: 2026-04-05T10:42:00Z
+    updated_at: 2026-04-05T11:10:00Z
   ---
   Notes for this task go here.
 <
 
-Frontmatter is split into two parts. Shared fields sit at the top level
-(`type`, `id`, `title`, `created_at`, `updated_at`, `start_time`,
-`end_time`). Type-specific fields are nested under two blocks,
-`task-data:` and `event-data:`.
+Frontmatter fields are organized into blocks:
 
-Both blocks are always written, so every file has the same structure
-regardless of its `type`. Only the block matching the file's `type` is
-read; the other is ignored, but kept so the file can be converted by
-changing `type`.
+  Top-level:    `type`, `title`, `start_date`, `start_time`, `start_tz`,
+                `end_date`, `end_time`, `end_tz`
+  task-data:    `status`, `completed_at`, `subtasks`
+  event-data:   `repeat` (with sub-fields `enable`, `period`, `repeats`)
+  metadata:     `id`, `created_at`, `updated_at`
 
-Task-specific fields, nested under `task-data:`, are `status`,
-`completed_at`, and `subtasks`.
+Both `task-data:` and `event-data:` are always written, so every file has
+the same structure regardless of its `type`. Only the block matching the
+file's type is read; the other is ignored, but kept so the file can be
+converted by changing `type`.
 
 The `type` field defaults to `task` when absent. Filenames are the
 slugified title with a `.md` extension. When the title is changed in the
@@ -221,27 +263,23 @@ match and any open Oil.nvim buffers are refreshed.
 The `updated_at` field is automatically set to the current time whenever
 the file is saved.
 
-When a new task or event is created, `start_time` and `end_time` both
-default to the current date: `start_time` at `00:00` and `end_time` at
-`23:59`, each with the configured timezone offset (see `timezone` in
-|cilantro-configuration|, default `-04:00`). For example:
-`2026-04-05T00:00-04:00`.
+When a new entry is created, `start_date`, `start_time`, `start_tz`,
+`end_date`, `end_time`, and `end_tz` are populated from the `defaults`
+table in configuration (see |cilantro-configuration|). The built-in
+defaults set today's date with times 00:00 and 23:59 and the configured
+timezone offset.
 
 Status values: `todo`, `in_progress`, `done`, `cancelled`.
 
 When sorting by end time (the default), tasks are grouped under date
-headers. Tasks without an end time are sorted last.
+headers. Tasks without an end date are sorted last.
 
-The `start_time` and `end_time` fields accept either a date
-(`2026-04-05`) or a date with a time (`2026-04-05T14:00`), optionally
-followed by a timezone offset (`2026-04-05T14:00-04:00` or a trailing
-`Z`). A date-only value is interpreted as `00:00` for `start_time` and
-`23:59` for `end_time`.
-
-Note: earlier versions used `start_date` / `end_date`, and stored all
-fields flat at the top level (no `task-data:` / `event-data:` block).
-Such files are still read correctly and are rewritten in the current
-format the next time they are saved.
+Backward compatibility: earlier versions used combined `start_time` /
+`end_time` fields (e.g. `2026-04-05T00:00-04:00`) or even older
+`start_date` / `end_date` names. Top-level `id`, `created_at`, and
+`updated_at` (before the `metadata:` block) are also recognized. Such
+files are still read correctly and are rewritten in the current format
+the next time they are saved.
 
 ==============================================================================
 EVENT FORMAT                                          *cilantro-event-format*
@@ -249,40 +287,91 @@ EVENT FORMAT                                          *cilantro-event-format*
 An event is a Markdown file with `type: event` in its frontmatter:
 >markdown
   ---
-  type: event
-  id: 01HT...
-  title: Team standup
-  created_at: 2026-04-05T10:42:00Z
-  updated_at: 2026-04-05T11:10:00Z
-  start_time: 2026-04-06T09:00
-  end_time: 2026-04-06T09:15
+  type:       event
+  title:      Team standup
+
+  start_date: 2026-04-06
+  start_time: 09:00
+  start_tz:   -04:00
+
+  end_date:   2026-04-06
+  end_time:   09:15
+  end_tz:     -04:00
+
   task-data:
     status:
     completed_at:
     subtasks:
+
   event-data:
-    length: 15m
-    recurring: weekly
+    repeat:
+      enable:  true
+      period:  week
+      repeats: 10
+
+  metadata:
+    id:         01HT...
+    created_at: 2026-04-05T10:42:00Z
+    updated_at: 2026-04-05T11:10:00Z
   ---
   Notes for this event go here.
 <
 
-Events share the top-level fields with tasks (see |cilantro-task-format|)
-and the same two-block structure. For an event the `task-data:` block is
-present but unused; the event-specific fields live under `event-data:`.
+Events share the same structure as tasks (see |cilantro-task-format|).
+For an event, the `task-data:` block is present but unused; the
+event-specific fields live under `event-data:`.
 
-Event-specific fields, nested under `event-data:`:
-
-  length      Optional string describing how long the event lasts
-              (free-form, for example `15m` or `1h`).
-  recurring   Optional string, one of: `daily`, `weekdays`, `weekly`,
-              `monthly`, `yearly`.
-
-`start_time` and `end_time` follow the same date / date-time rules as
-tasks (see |cilantro-task-format|).
+See |cilantro-repeating-events| for details on the `repeat` block.
 
 Events are created with |:CilantroCreateEvent| and stored in the same
 `task_dir` as tasks.
+
+==============================================================================
+REPEATING EVENTS                                  *cilantro-repeating-events*
+
+The `repeat` block under `event-data:` controls whether an event recurs:
+
+  enable      `true` or `false` (or empty). Repeating is only active
+              when this is `true`.
+  period      How often the event repeats. One of:
+              `day`   - every day
+              `week`  - every 7 days from `start_date`
+              `month` - same day-of-month each month
+              `year`  - same day each year
+              `[mon, wed, fri]` - specific days of the week (inline
+              list of abbreviated day names: sun, mon, tue, wed, thu,
+              fri, sat)
+  repeats     Optional integer. The number of occurrences. When set,
+              `end_date` may be omitted and the event will repeat
+              exactly this many times starting from `start_date`.
+
+When `repeats` is empty, the event repeats from `start_date` to
+`end_date`. When `repeats` is a number, the event repeats that many
+times regardless of `end_date`.
+
+In the calendar view, each occurrence of a repeating event is displayed
+on its respective date with its full time range and a `~` marker showing
+the repeat period.
+
+Example: weekly standup for 4 weeks
+>yaml
+  event-data:
+    repeat:
+      enable:  true
+      period:  week
+      repeats: 4
+<
+
+Example: class on specific days until end of semester
+>yaml
+  start_date: 2026-01-12
+  end_date:   2026-05-15
+  event-data:
+    repeat:
+      enable:  true
+      period:  [mon, wed, fri]
+      repeats:
+<
 
 ==============================================================================
 CALENDAR                                                  *cilantro-calendar*
@@ -293,19 +382,19 @@ calendar of events in the middle, and the task list on the right.
 Events appear in the calendar column; tasks appear in the list column.
 
 The relative widths of the three panels are set by `layout.ratio`
-(default `{ 1, 2, 2 }` — file tree : events : tasks). See
+(default `{ 1, 2, 2 }` -- file tree : events : tasks). See
 |cilantro-configuration|.
 
 The file tree panel is opened by `layout.file_tree`. The default,
 `"netrw"`, runs `:Explore` on `task_dir`. Any other value is run as an
-Ex command — for example `file_tree = "Oil"` runs `:Oil` (oil.nvim). If
+Ex command -- for example `file_tree = "Oil"` runs `:Oil` (oil.nvim). If
 the command fails (for example the plugin is not installed) the panel
 is skipped and only the calendar and task columns are shown.
 
 Closing any panel (for example pressing `q`) closes all three together.
 
 Both columns are grouped under shared date headers: events are grouped by
-`start_time`, tasks by `end_time`, and the headers are aligned row-for-row
+`start_date`, tasks by `end_date`, and the headers are aligned row-for-row
 across the two columns. The two windows scroll together (mouse wheel,
 `j` / `k`, `<C-d>` / `<C-u>`, etc.), so the dates always stay lined up.
 
@@ -313,8 +402,10 @@ The calendar column is shown only while sorting by end time (the default).
 Choosing another sort field hides it; sorting by end time again, or
 pressing `tc`, brings it back.
 
-Recurring events are shown once, on their `start_time` date, with a `↻`
-marker. Events without a `start_time` are omitted from the calendar.
+Repeating events are expanded: each occurrence appears on its respective
+date with the full time range. A `~` marker is shown next to the title
+along with the repeat period. Events without a `start_date` are omitted
+from the calendar.
 
 ==============================================================================
 HIGHLIGHTS                                              *cilantro-highlights*

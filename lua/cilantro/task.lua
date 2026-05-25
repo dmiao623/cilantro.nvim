@@ -1,7 +1,6 @@
 local config = require("cilantro.config")
 local id = require("cilantro.id")
 local frontmatter = require("cilantro.frontmatter")
-local datetime = require("cilantro.datetime")
 
 local M = {}
 
@@ -57,8 +56,12 @@ local function build_task(metadata, path, body_lines)
     status = metadata.status,
     created_at = metadata.created_at,
     updated_at = metadata.updated_at,
+    start_date = metadata.start_date,
     start_time = metadata.start_time,
+    start_tz = metadata.start_tz,
+    end_date = metadata.end_date,
     end_time = metadata.end_time,
+    end_tz = metadata.end_tz,
     completed_at = metadata.completed_at,
     subtasks = normalize_subtasks(metadata.subtasks),
     path = path,
@@ -92,20 +95,25 @@ end
 function M.create(title, dir, overrides)
   overrides = overrides or {}
   local cfg = config.get()
+  local defaults = config.resolve_defaults(cfg)
 
   local task_id = id.generate()
   local now = now_iso()
 
   local metadata = {
     type = "task",
-    id = task_id,
     title = title,
     status = overrides.status or cfg.default_status,
+    start_date = overrides.start_date or defaults.start_date,
+    start_time = overrides.start_time or defaults.start_time,
+    start_tz = overrides.start_tz or defaults.start_tz,
+    end_date = overrides.end_date or defaults.end_date,
+    end_time = overrides.end_time or defaults.end_time,
+    end_tz = overrides.end_tz or defaults.end_tz,
+    completed_at = overrides.completed_at,
+    id = task_id,
     created_at = now,
     updated_at = now,
-    start_time = overrides.start_time or datetime.default_start(cfg.timezone),
-    end_time = overrides.end_time or datetime.default_end(cfg.timezone),
-    completed_at = overrides.completed_at,
   }
 
   local filename = M.make_filename(title)
@@ -132,16 +140,21 @@ function M.bootstrap_lines(lines, path)
   local task_id = id.generate()
   local now = now_iso()
   local cfg = config.get()
+  local defaults = config.resolve_defaults(cfg)
 
   local new_metadata = {
     type = "task",
-    id = task_id,
     title = title,
     status = cfg.default_status,
+    start_date = defaults.start_date,
+    start_time = defaults.start_time,
+    start_tz = defaults.start_tz,
+    end_date = defaults.end_date,
+    end_time = defaults.end_time,
+    end_tz = defaults.end_tz,
+    id = task_id,
     created_at = now,
     updated_at = now,
-    start_time = datetime.default_start(cfg.timezone),
-    end_time = datetime.default_end(cfg.timezone),
   }
 
   local new_lines = frontmatter.serialize(new_metadata)

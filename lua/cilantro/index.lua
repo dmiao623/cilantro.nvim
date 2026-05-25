@@ -169,11 +169,11 @@ function M.query(opts)
       va = status_index[a.status] or 99
       vb = status_index[b.status] or 99
     elseif sort_by == "end_time" then
-      va = datetime.end_of(a.end_time) or "9999-99-99T99:99"
-      vb = datetime.end_of(b.end_time) or "9999-99-99T99:99"
+      va = datetime.end_of_parts(a.end_date, a.end_time) or "9999-99-99T99:99"
+      vb = datetime.end_of_parts(b.end_date, b.end_time) or "9999-99-99T99:99"
     elseif sort_by == "start_time" then
-      va = datetime.start_of(a.start_time) or "9999-99-99T99:99"
-      vb = datetime.start_of(b.start_time) or "9999-99-99T99:99"
+      va = datetime.start_of_parts(a.start_date, a.start_time) or "9999-99-99T99:99"
+      vb = datetime.start_of_parts(b.start_date, b.start_time) or "9999-99-99T99:99"
     else
       va = a[sort_by] or ""
       vb = b[sort_by] or ""
@@ -200,14 +200,14 @@ function M.query_events(opts)
   local results = {}
 
   for _, e in pairs(M.events) do
-    if e.start_time then
+    if e.start_date then
       table.insert(results, e)
     end
   end
 
   table.sort(results, function(a, b)
-    local va = datetime.start_of(a.start_time) or "9999-99-99T99:99"
-    local vb = datetime.start_of(b.start_time) or "9999-99-99T99:99"
+    local va = datetime.start_of_parts(a.start_date, a.start_time) or "9999-99-99T99:99"
+    local vb = datetime.start_of_parts(b.start_date, b.start_time) or "9999-99-99T99:99"
     if va ~= vb then
       return va < vb
     end
