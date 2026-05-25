@@ -10,6 +10,7 @@ M.defaults = {
   timezone = "-04:00",
   -- Show a confirmation prompt before deleting a task or event.
   confirm_delete = true,
+  show_paths = true,
   list_columns = { "status", "title", "end_time" },
   calendar = {
     enabled = true,

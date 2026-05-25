@@ -8,7 +8,7 @@ M.bufnr = nil
 M.event_ids = {}
 M.tree_win = nil
 M.layout_augroup = nil
-M.show_paths = true
+M.show_paths = nil
 
 local ns = vim.api.nvim_create_namespace("CilantroCalendar")
 
@@ -30,6 +30,10 @@ function M.get_buf()
   vim.api.nvim_set_option_value("swapfile", false, { buf = M.bufnr })
   vim.api.nvim_set_option_value("filetype", "cilantro-calendar", { buf = M.bufnr })
   vim.api.nvim_set_option_value("modifiable", false, { buf = M.bufnr })
+
+  if M.show_paths == nil then
+    M.show_paths = config.get().show_paths
+  end
 
   M.setup_keymaps(M.bufnr)
 
