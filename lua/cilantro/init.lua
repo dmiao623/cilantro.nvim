@@ -3,19 +3,28 @@ local M = {}
 local augroup = nil
 local writing = false
 
-local function refresh_oil()
-  local has_oil, oil = pcall(require, "oil")
-  if not has_oil then
-    return
-  end
+local function refresh_file_tree()
   local cfg = require("cilantro.config").get()
+
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].filetype == "oil" then
-      local dir = oil.get_current_dir(buf)
-      if dir and vim.startswith(dir, cfg.task_dir) then
-        vim.api.nvim_buf_call(buf, function()
-          vim.cmd("edit")
-        end)
+    if vim.api.nvim_buf_is_valid(buf) then
+      local ft = vim.bo[buf].filetype
+
+      if ft == "oil" then
+        local name = vim.api.nvim_buf_get_name(buf)
+        local dir = name:match("^oil://(.*)")
+        if dir and vim.startswith(dir, cfg.task_dir) then
+          vim.api.nvim_buf_call(buf, function()
+            vim.cmd("edit")
+          end)
+        end
+      elseif ft == "netrw" then
+        local dir = vim.b[buf].netrw_curdir or ""
+        if vim.startswith(dir, cfg.task_dir) then
+          vim.api.nvim_buf_call(buf, function()
+            vim.cmd("edit")
+          end)
+        end
       end
     end
   end
@@ -93,7 +102,7 @@ function M.setup(opts)
               vim.fn.delete(ev.file)
               new_task.path = new_path
               idx.remove(ev.file)
-              refresh_oil()
+              refresh_file_tree()
             else
               vim.cmd("noautocmd write")
             end
@@ -139,7 +148,7 @@ function M.setup(opts)
         if item then
           idx.put(item)
         end
-        refresh_oil()
+        refresh_file_tree()
       else
         vim.cmd("noautocmd write")
         idx.refresh_path(ev.file)
@@ -233,7 +242,7 @@ function M.create_task(input)
       list.render()
     end
 
-    refresh_oil()
+    refresh_file_tree()
 
     local peek = require("cilantro.ui.peek")
     peek.open(task)
@@ -278,7 +287,7 @@ function M.create_event(input)
       list.render()
     end
 
-    refresh_oil()
+    refresh_file_tree()
 
     local peek = require("cilantro.ui.peek")
     peek.open(event)
@@ -327,7 +336,7 @@ function M.delete(item)
     list.render()
   end
 
-  refresh_oil()
+  refresh_file_tree()
 end
 
 function M.refresh()
